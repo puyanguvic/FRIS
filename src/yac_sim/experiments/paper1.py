@@ -168,7 +168,7 @@ def figure_B_time_response(cfg: SimConfig, outdir: Path, delta_knee: float) -> N
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(3.5, 2.6), sharex=True)
 
-    ax1.plot(t, P_trace, label=r"$\mathrm{tr}(P_k^-)$")
+    ax1.plot(t, P_trace, label=r"$\mathrm{tr}(P_k)$")
     ax1.axhline(cfg1.delta, linestyle="--", linewidth=0.8, label=r"threshold $\delta$")
     idx = np.where(tx > 0)[0]
     if idx.size > 0:
@@ -354,7 +354,7 @@ def figure_D_oracle_comparison(cfg: SimConfig, outdir: Path) -> None:
     plt.close(fig)
 
 
-def run_all(outdir: str = "result", mc_runs: int | None = None, t_steps: int | None = None, fast: bool = False) -> None:
+def run_all(outdir: str = "figs", mc_runs: int | None = None, t_steps: int | None = None, fast: bool = False) -> None:
     outdir = Path(outdir)
     cfg = SimConfig()
 

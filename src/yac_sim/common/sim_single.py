@@ -43,7 +43,7 @@ def simulate(cfg: SimConfig, policy: str = "ET", rng: np.random.Generator | None
     """Simulate one rollout over a finite horizon.
 
     Policies:
-      - ET: innovation-triggered (paper eq. (trigger))
+      - ET: covariance-triggered (trace(P_k) threshold)
       - PER: periodic with period_M
       - RAND: Bernoulli random with probability random_p
     """
@@ -96,7 +96,7 @@ def simulate(cfg: SimConfig, policy: str = "ET", rng: np.random.Generator | None
         x_hat_pred = A_hat @ x_hat + B @ u_prev
         P_pred = A_hat @ P @ A_hat.T + Qw
 
-        # innovation used for triggering (paper eq. (trigger))
+        # innovation is logged; trigger uses trace(P_pred)
         innovation = y - (C @ x_hat_pred)
         innovation_norm[k] = norm2(innovation)
         trace_pred = float(np.trace(P_pred))

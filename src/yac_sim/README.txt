@@ -1,7 +1,7 @@
 YAC / SCC simulation code (paper-aligned)
 
-Run (paper 1 experiments):
-  python -m yac_sim --outdir result
+Run (paper experiments):
+  python run_experiments.py
 
 Key notes:
 - Process/measurement noise modeled as Gaussian with stds (sigma_w, sigma_v).
