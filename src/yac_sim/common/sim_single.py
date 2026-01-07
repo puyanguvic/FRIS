@@ -6,7 +6,6 @@ from .config import SimConfig
 from .models import double_integrator_2d
 from .utils import dlqr, norm2
 from .channels import GilbertElliottChannel
-from .quantization import uniform_quantize
 
 
 def _cost_matrices(cfg: SimConfig) -> tuple[np.ndarray, np.ndarray]:
@@ -39,13 +38,20 @@ def _measurement_matrices(cfg: SimConfig, n: int) -> tuple[np.ndarray, int]:
     return C, p
 
 
-def simulate(cfg: SimConfig, policy: str = "ET", rng: np.random.Generator | None = None) -> dict:
+def simulate(
+    cfg: SimConfig,
+    policy: str = "ET",
+    rng: np.random.Generator | None = None,
+    policy_fn=None,
+) -> dict:
     """Simulate one rollout over a finite horizon.
 
     Policies:
       - ET: covariance-triggered (trace(P_k) threshold)
       - PER: periodic with period_M
-      - RAND: Bernoulli random with probability random_p
+      - ALWAYS: always attempt transmission
+      - NONE: never attempt transmission
+      - DP: use policy_fn(k, P) supplied by experiment code
     """
     if rng is None:
         rng = np.random.default_rng(int(cfg.seed) & 0xFFFFFFFF)
@@ -60,7 +66,6 @@ def simulate(cfg: SimConfig, policy: str = "ET", rng: np.random.Generator | None
     # Predictor may have mismatch (robust experiment)
     A_hat = A + float(cfg.mismatch_eps) * np.eye(n, dtype=float)
 
-    # Channel used only in robust mode
     ch = GilbertElliottChannel(cfg.p_good_to_bad, cfg.p_bad_to_good, cfg.loss_good, cfg.loss_bad, rng)
 
     # initial state: random position/velocity
@@ -80,10 +85,26 @@ def simulate(cfg: SimConfig, policy: str = "ET", rng: np.random.Generator | None
     tx_deliv = np.zeros(cfg.T_steps, dtype=int)
     P_trace = np.zeros(cfg.T_steps)
 
-    Jx = 0.0
-    Eu = 0.0
+    J_P = 0.0
+    J_C = 0.0
+    J_X = 0.0
 
     for k in range(cfg.T_steps):
+        # decide whether to transmit based on current covariance
+        trace_curr = float(np.trace(P))
+        if policy_fn is not None:
+            do_tx = bool(policy_fn(k, P))
+        elif policy == "ET":
+            do_tx = trace_curr > float(cfg.delta)
+        elif policy == "PER":
+            do_tx = (k % max(int(cfg.period_M), 1) == 0)
+        elif policy == "ALWAYS":
+            do_tx = True
+        elif policy == "NONE":
+            do_tx = False
+        else:
+            raise ValueError(f"Unknown policy: {policy}")
+
         # --- plant update (process noise) ---
         w = _gaussian_noise(rng, cfg.sigma_w, n)
         x = A @ x + B @ u_prev + w
@@ -96,35 +117,22 @@ def simulate(cfg: SimConfig, policy: str = "ET", rng: np.random.Generator | None
         x_hat_pred = A_hat @ x_hat + B @ u_prev
         P_pred = A_hat @ P @ A_hat.T + Qw
 
-        # innovation is logged; trigger uses trace(P_pred)
+        # innovation is logged; trigger uses trace(P_k)
         innovation = y - (C @ x_hat_pred)
         innovation_norm[k] = norm2(innovation)
-        trace_pred = float(np.trace(P_pred))
-
-        # decide whether to transmit
-        if policy == "ET":
-            do_tx = trace_pred > float(cfg.delta)
-        elif policy == "PER":
-            do_tx = (k % max(int(cfg.period_M), 1) == 0)
-        elif policy == "RAND":
-            do_tx = (float(rng.random()) < float(cfg.random_p))
-        else:
-            raise ValueError(f"Unknown policy: {policy}")
 
         if do_tx:
             tx_attempt[k] = 1
-            delivered = True if cfg.mode == "theory" else ch.deliver()
+            if cfg.channel_model == "iid":
+                delivered = float(rng.random()) < float(cfg.p_success)
+            elif cfg.channel_model == "ge":
+                delivered = ch.deliver()
+            else:
+                raise ValueError(f"Unknown channel model: {cfg.channel_model}")
 
             if delivered:
                 tx_deliv[k] = 1
-
-                # quantization (robust only)
-                if cfg.mode == "robust" and int(cfg.bits_per_value) < 32:
-                    y_rx = uniform_quantize(y, cfg.bits_per_value, cfg.q_min, cfg.q_max)
-                else:
-                    y_rx = y
-
-                innovation_rx = y_rx - (C @ x_hat_pred)
+                innovation_rx = y - (C @ x_hat_pred)
                 S = C @ P_pred @ C.T + Rv
                 Kk = P_pred @ C.T @ np.linalg.pinv(S)
                 x_hat = x_hat_pred + (Kk @ innovation_rx)
@@ -136,15 +144,11 @@ def simulate(cfg: SimConfig, policy: str = "ET", rng: np.random.Generator | None
             x_hat = x_hat_pred
             P = P_pred
 
-        # Log prediction covariance trace used by the trigger.
-        P_trace[k] = trace_pred
+        # Log covariance trace used by the trigger.
+        P_trace[k] = trace_curr
 
         # control uses remote estimate only (paper eq. (control))
         u = -(K @ x_hat).reshape(-1)
-
-        # instantaneous LQR cost (paper simulation setup)
-        Jx += float(x.T @ Q @ x)
-        Eu += float(u.T @ R @ u)
 
         # prediction error (paper eq. (tilde))
         tilde_x = x - x_hat
@@ -153,6 +157,10 @@ def simulate(cfg: SimConfig, policy: str = "ET", rng: np.random.Generator | None
         x_norm[k] = norm2(x)
         u_prev = u
 
+        J_P += trace_curr
+        J_C += float(do_tx)
+        J_X += float(x_norm[k] ** 2)
+
     # packet counts are primary in the paper; bits are auxiliary (for legacy plots)
     N_attempt = int(tx_attempt.sum())
     N_deliv = int(tx_deliv.sum())
@@ -160,9 +168,9 @@ def simulate(cfg: SimConfig, policy: str = "ET", rng: np.random.Generator | None
     bits_deliv = N_deliv * n * int(cfg.bits_per_value)
 
     return dict(
-        J=Jx + Eu,
-        Jx=Jx,
-        Eu=Eu,
+        J_P=J_P,
+        J_C=J_C,
+        J_X=J_X,
         x_norm=x_norm,
         tilde_x_norm=tilde_x_norm,
         innovation_norm=innovation_norm,
@@ -181,37 +189,38 @@ def monte_carlo(
     policy: str,
     deltas: list[float] | None = None,
     periods: list[int] | None = None,
-    random_ps: list[float] | None = None,
+    seeds: list[int] | None = None,
 ) -> list[dict]:
     """Run Monte Carlo for a sweep of a single policy knob.
 
     Returns a list of dicts, one per sweep point, matching the plotting helpers in experiments/paper1.py.
     Each dict contains:
       - param: sweep value (delta / period / p)
-      - J: array of total LQR costs over MC runs
-      - Jx: array of state-regulation costs over MC runs
-      - Eu: array of control-energy costs over MC runs
+      - J_P: array of sum trace(P_k) over MC runs
+      - J_C: array of sum a_k over MC runs
+      - J_X: array of sum ||x_k||^2 over MC runs
       - N_deliv: array of delivered packet counts over MC runs
       - bits_deliv: array of delivered bits over MC runs (auxiliary)
       - N_attempt / bits_attempt also included for completeness
     """
-    rng_master = np.random.default_rng(int(cfg.seed) & 0xFFFFFFFF)
-    seeds = rng_master.integers(0, 2**31 - 1, size=int(cfg.mc_runs), dtype=np.int64).tolist()
+    if seeds is None:
+        rng_master = np.random.default_rng(int(cfg.seed) & 0xFFFFFFFF)
+        seeds = rng_master.integers(0, 2**31 - 1, size=int(cfg.mc_runs), dtype=np.int64).tolist()
 
     results: list[dict] = []
 
     if policy == "ET":
         assert deltas is not None
         for d in deltas:
-            Js, Jx, Eu, Nd, Bd, Na, Ba = [], [], [], [], [], [], []
+            Jp, Jc, Jx, Nd, Bd, Na, Ba = [], [], [], [], [], [], []
             for s in seeds:
                 rng = np.random.default_rng(int(s))
                 cfg2 = SimConfig(**cfg.__dict__)
                 cfg2.delta = float(d)
                 out = simulate(cfg2, "ET", rng=rng)
-                Js.append(out["J"])
-                Jx.append(out["Jx"])
-                Eu.append(out["Eu"])
+                Jp.append(out["J_P"])
+                Jc.append(out["J_C"])
+                Jx.append(out["J_X"])
                 Nd.append(out["N_deliv"])
                 Bd.append(out["bits_deliv"])
                 Na.append(out["N_attempt"])
@@ -219,9 +228,9 @@ def monte_carlo(
             results.append(
                 dict(
                     param=float(d),
-                    J=np.asarray(Js, dtype=float),
-                    Jx=np.asarray(Jx, dtype=float),
-                    Eu=np.asarray(Eu, dtype=float),
+                    J_P=np.asarray(Jp, dtype=float),
+                    J_C=np.asarray(Jc, dtype=float),
+                    J_X=np.asarray(Jx, dtype=float),
                     N_deliv=np.asarray(Nd, dtype=float),
                     bits_deliv=np.asarray(Bd, dtype=float),
                     N_attempt=np.asarray(Na, dtype=float),
@@ -232,15 +241,15 @@ def monte_carlo(
     elif policy == "PER":
         assert periods is not None
         for M in periods:
-            Js, Jx, Eu, Nd, Bd, Na, Ba = [], [], [], [], [], [], []
+            Jp, Jc, Jx, Nd, Bd, Na, Ba = [], [], [], [], [], [], []
             for s in seeds:
                 rng = np.random.default_rng(int(s))
                 cfg2 = SimConfig(**cfg.__dict__)
                 cfg2.period_M = int(M)
                 out = simulate(cfg2, "PER", rng=rng)
-                Js.append(out["J"])
-                Jx.append(out["Jx"])
-                Eu.append(out["Eu"])
+                Jp.append(out["J_P"])
+                Jc.append(out["J_C"])
+                Jx.append(out["J_X"])
                 Nd.append(out["N_deliv"])
                 Bd.append(out["bits_deliv"])
                 Na.append(out["N_attempt"])
@@ -248,9 +257,9 @@ def monte_carlo(
             results.append(
                 dict(
                     param=int(M),
-                    J=np.asarray(Js, dtype=float),
-                    Jx=np.asarray(Jx, dtype=float),
-                    Eu=np.asarray(Eu, dtype=float),
+                    J_P=np.asarray(Jp, dtype=float),
+                    J_C=np.asarray(Jc, dtype=float),
+                    J_X=np.asarray(Jx, dtype=float),
                     N_deliv=np.asarray(Nd, dtype=float),
                     bits_deliv=np.asarray(Bd, dtype=float),
                     N_attempt=np.asarray(Na, dtype=float),
@@ -258,34 +267,6 @@ def monte_carlo(
                 )
             )
 
-    elif policy == "RAND":
-        assert random_ps is not None
-        for p in random_ps:
-            Js, Jx, Eu, Nd, Bd, Na, Ba = [], [], [], [], [], [], []
-            for s in seeds:
-                rng = np.random.default_rng(int(s))
-                cfg2 = SimConfig(**cfg.__dict__)
-                cfg2.random_p = float(p)
-                out = simulate(cfg2, "RAND", rng=rng)
-                Js.append(out["J"])
-                Jx.append(out["Jx"])
-                Eu.append(out["Eu"])
-                Nd.append(out["N_deliv"])
-                Bd.append(out["bits_deliv"])
-                Na.append(out["N_attempt"])
-                Ba.append(out["bits_attempt"])
-            results.append(
-                dict(
-                    param=float(p),
-                    J=np.asarray(Js, dtype=float),
-                    Jx=np.asarray(Jx, dtype=float),
-                    Eu=np.asarray(Eu, dtype=float),
-                    N_deliv=np.asarray(Nd, dtype=float),
-                    bits_deliv=np.asarray(Bd, dtype=float),
-                    N_attempt=np.asarray(Na, dtype=float),
-                    bits_attempt=np.asarray(Ba, dtype=float),
-                )
-            )
     else:
         raise ValueError(f"Unknown policy: {policy}")
 

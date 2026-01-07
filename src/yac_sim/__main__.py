@@ -4,7 +4,7 @@ import argparse
 from .experiments.paper1 import run_all
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run YAC simulation experiments.")
+    parser = argparse.ArgumentParser(description="Run FRIS simulation experiments.")
     parser.add_argument("--outdir", default="figs", help="Output directory for figures.")
     parser.add_argument("--mc-runs", type=int, default=None, help="Override Monte Carlo runs per sweep.")
     parser.add_argument("--t-steps", type=int, default=None, help="Override number of simulation steps.")

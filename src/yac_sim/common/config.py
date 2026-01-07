@@ -10,13 +10,13 @@ class SimConfig:
     mc_runs: int = 30
     seed: int = 7
 
-    # modes: "theory" (paper baseline) or "robust" (noise/quant/loss/mismatch)
-    mode: str = "theory"
+    # channel model: "iid" (Bernoulli) or "ge" (Gilbert-Elliott)
+    channel_model: str = "iid"
+    p_success: float = 0.85
 
     # trigger / periodic
     delta: float = 0.4
     period_M: int = 10
-    random_p: float = 0.1  # for random baseline
 
     # disturbances / noise (paper: Gaussian with covariance)
     w_bar: float = 0.06   # legacy: L_infty bound (kept for compatibility; not used in new experiments)
@@ -52,8 +52,9 @@ class SimConfig:
     P0_scale: float = 1.0
 
     def force_theory(self) -> None:
-        """Configure idealized 'theory' mode consistent with the paper assumptions."""
-        self.mode = "theory"
+        """Configure idealized baseline consistent with the paper assumptions."""
+        self.channel_model = "iid"
+        self.p_success = 1.0
         self.v_bar = 0.0
         self.bits_per_value = 32
         self.loss_good = 0.0

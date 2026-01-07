@@ -1,2 +1,5 @@
 # FRIS
-Finite-horizon Regulated Information-state Scheduling
+Finite-horizon Information-State Communication Scheduling (FICS)
+
+Run the paper experiments:
+`python run_experiments.py`
