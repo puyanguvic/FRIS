@@ -1,300 +1,405 @@
 \begin{abstract}
-Wireless communication is essential for state estimation in networked and unmanned systems, yet is often intermittent and resource constrained. This paper studies a performance--communication trade-off for event-triggered state estimation over finite horizons in linear systems. Intermittent communication is modeled as a grow-and-reset evolution of the controller-side estimation error, providing a system-level interpretation of how communication regulates estimation uncertainty. For an uncertainty-based event-triggered update rule, we establish communication-regulated practical stability guarantees and show that the ultimate estimation error bound scales explicitly with the triggering threshold. Simulation results demonstrate clear Pareto-type trade-offs, near-oracle performance relative to optimal scheduling benchmarks, and robustness under communication and modeling uncertainties.
+This paper studies finite-horizon communication scheduling for discrete-time linear systems operating over packet-dropping channels.
+The sensor decides at each time step whether to attempt transmission, while packet reception is subject to random losses.
+Exploiting acknowledgement signals, the controller can exactly track the evolution of the estimation error covariance, which constitutes a sufficient information state for communication decisions under linear--Gaussian assumptions.
+Based on this observation, we formulate the scheduling problem as a finite-horizon Markov decision process (MDP) with the error covariance as the state, the transmission decision as the action, and a cost that penalizes both estimation uncertainty and communication usage.
+The resulting dynamic programming recursion yields an optimal scheduling policy that serves as a principled benchmark under stochastic packet drops.
+Beyond optimal scheduling, we provide a system-level interpretation showing that intermittent communication induces a grow-and-reset uncertainty dynamics, through which communication decisions regulate an endogenous disturbance entering the closed-loop system under certainty-equivalent control.
+Simulation studies illustrate finite-horizon performance--communication trade-offs, compare MDP-optimal scheduling with structured event-triggered policies, and demonstrate robustness to packet loss severity and modeling mismatch.
 \end{abstract}
 
 
-
-
 \begin{IEEEkeywords}
-event-triggered control, communication constraints, unmanned systems, networked control
+event-triggered communication, networked control systems, Markov decision processes, packet-dropping channels
 \end{IEEEkeywords}
-
 
 \section{Introduction}
 
-Unmanned systems operating over large spatial scales increasingly rely on wireless communication to close the sensing--control loop, a setting that has been extensively studied in networked control systems~\cite{hespanha2007survey,schenato2007foundations}. In precision agriculture, UAV-based platforms are widely adopted for monitoring and actuation; however, their wireless links are inherently bandwidth-limited, intermittent, and energy-constrained~\cite{zeng2016wireless}. Meanwhile, the underlying plant dynamics in such applications are often smooth and slowly varying, rendering periodic state transmission unnecessarily conservative.
+Wireless communication enables distributed sensing and control in unmanned and cyber--physical systems, but practical links are bandwidth-limited and subject to packet drops. As a result, periodic transmission can waste scarce resources and may be untenable under mission-level constraints. Communication scheduling addresses this limitation by allocating transmissions to the times when they are most valuable.
 
-Event-triggered control and estimation have therefore emerged as promising alternatives, in which communication decisions are adapted to the system state rather than fixed sampling schedules~\cite{tabuada2007event,heemels2012introduction}. In such architectures, intermittent communication induces a mismatch between the true system state and the controller-side estimate. Importantly, this mismatch is not an exogenous disturbance, but is actively regulated through communication events that reset the estimation error when it exceeds a prescribed threshold.
+Intermittent reception fundamentally alters the controller-side estimator. When a measurement is not received, the estimate evolves in prediction mode and the estimation uncertainty grows under the open-loop dynamics; when a measurement is received, the Kalman update contracts the error. This \emph{grow-and-reset} uncertainty evolution implies that communication decisions regulate the magnitude of the estimation error that feeds back through certainty-equivalent control and acts as an endogenous disturbance on the closed-loop system.
 
-In this paper, we adopt a system-level viewpoint and interpret event-triggered communication as a communication-regulated estimation mechanism. We consider a linear time-invariant system controlled by a fixed linear quadratic regulator (LQR), where the controller runs a Kalman filter and receives state information intermittently. Communication decisions induce a grow-and-reset evolution of the controller-side estimation error, which acts as an endogenous disturbance to the nominal closed-loop system. Unlike classical disturbance-driven formulations, the magnitude of this disturbance is governed directly by communication events.
+We study finite-horizon communication scheduling for a discrete-time LTI system over a packet-dropping channel. At each time step, the sensor chooses whether to attempt transmission, while reception is modeled as an i.i.d.\ Bernoulli process. With acknowledgements, the controller can track the estimation error covariance exactly; under linear--Gaussian assumptions, this covariance is a sufficient information state for covariance-based scheduling. We formulate the resulting problem as a finite-horizon Markov decision process (MDP) with state $P_k$, action $a_k\in\{0,1\}$, and a stage cost that penalizes $\mathrm{tr}(P_k)$ and transmission effort. Solving the associated dynamic program yields an MDP-optimal scheduling policy that serves as a principled finite-horizon benchmark.
 
-Focusing on finite mission horizons, we study an uncertainty-based event-triggered communication policy in which transmissions occur when the estimation error covariance exceeds a threshold. The triggering threshold serves as a single system-level design parameter: decreasing it improves estimation accuracy and control performance at the cost of increased communication, while increasing it reduces communication usage at the expense of larger transient deviations. This perspective aligns with recent efforts on sensing--communication--control co-design in networked systems~\cite{zhang2019networked}.
+We refer to this viewpoint as \emph{finite-horizon information-state communication scheduling} (FICS). FICS provides a single framework that (i) produces an optimal benchmark via dynamic programming and (ii) supports interpretable low-complexity policies by acting directly on the information state.
 
-The contributions of this paper are summarized as follows:
+We further connect FICS to a communication-regulated stability interpretation. Under certainty-equivalent feedback, the estimation error enters the closed-loop dynamics as an endogenous input whose magnitude is governed by the grow-and-reset covariance process. Threshold-type rules can therefore be viewed as uncertainty regulators that limit error growth and confine the state to a controlled neighborhood, consistent with communication-regulated ISS and practical stability intuition.
+
+The contributions of this paper are:
 \begin{itemize}
-\item We model intermittent communication as a grow-and-reset mechanism acting on the controller-side estimation error, yielding a transparent system-level interpretation of event-triggered estimation.
-\item We establish communication-regulated practical stability guarantees over finite horizons, explicitly characterizing how the ultimate bound scales with the triggering threshold.
-\item Through simulations motivated by precision agriculture scenarios, we demonstrate clear performance--communication--energy trade-offs, visualize the grow-and-reset mechanism, benchmark against optimal scheduling oracles, and show robustness under communication and modeling uncertainties.
+\item An information-state MDP formulation of finite-horizon scheduling under stochastic packet drops, using the controller-side covariance as a sufficient decision state.
+\item A dynamic programming recursion and numerical computation of an MDP-optimal scheduling policy that serves as a finite-horizon benchmark.
+\item A system-level interpretation linking the benchmark and threshold heuristics through the grow-and-reset uncertainty dynamics and the resulting endogenous disturbance view under certainty-equivalent control.
+\item Simulation studies that quantify performance--communication trade-offs and evaluate sensitivity to packet loss severity, modeling mismatch, and disturbances.
 \end{itemize}
 
 
 \section{Related Work}
 
-Event-triggered control and networked control systems have been extensively studied, with a rich body of results on stability analysis, performance guarantees, and communication reduction; see, e.g.,~\cite{tabuada2007event,heemels2012introduction,ge2020dynamic} and references therein. Existing works primarily focus on the design of triggering mechanisms---including static, periodic, and dynamic triggering rules---and on establishing sufficient conditions for stability, Zeno-freeness, or robustness under network-induced imperfections such as packet loss and denial-of-service attacks~\cite{dolk2016event,feng2020networked,zhao2020dynamic}.
+Intermittent communication and event-triggered information exchange have been extensively studied in networked control and estimation. Early work on periodic and scheduled communication focused on stabilizability and performance guarantees under constrained sampling rates or limited bandwidth, often assuming fixed transmission patterns or known schedules.
+While these approaches are analytically tractable, they tend to be conservative when communication resources are scarce or channel conditions are uncertain.
 
-A related line of research investigates optimal communication scheduling using dynamic programming, Markov decision processes, and stochastic control formulations~\cite{hespanha2007survey,chen2020often}. While these approaches can yield optimal or near-optimal scheduling policies, their computational complexity typically scales poorly with horizon length and state dimension, limiting their practical applicability in long-duration missions.
+Event-triggered and self-triggered strategies were subsequently introduced to reduce unnecessary transmissions by exploiting the evolution of system uncertainty or estimation error.
+A large body of literature has established stability and performance guarantees for both deterministic and stochastic event-triggered control and estimation schemes, demonstrating that substantial communication savings can be achieved without sacrificing closed-loop stability.
+Most existing results, however, rely on static triggering rules or asymptotic analysis, and do not explicitly address finite-horizon optimality in the presence of stochastic packet drops.
 
-More recently, data-driven formulations have been proposed to synthesize event-triggered controllers and estimators directly from data while preserving stability guarantees~\cite{de2019formulas,de2023event,wang2023data}. These methods are particularly appealing in large-scale or uncertain environments, but often require substantial offline training or online adaptation.
+Remote state estimation over packet-dropping channels has also been widely investigated.
+Classical results characterize the stability of Kalman filtering under random packet losses and identify critical packet reception probabilities for bounded estimation error.
+Subsequent studies considered optimal sensor scheduling and transmission policies, often formulating infinite-horizon average-cost or discounted-cost optimization problems.
+These formulations primarily focus on asymptotic behavior and, in many cases, assume simplified system models or perfect knowledge of channel statistics.
 
-In contrast to these approaches, the present paper does not aim to design new triggering mechanisms, feedback controllers, or optimal scheduling policies. Instead, we adopt a system-level perspective to characterize how intermittent communication regulates the evolution of estimation uncertainty over finite horizons. By modeling event-triggered communication as a grow-and-reset mechanism acting on the Kalman filter estimation error, we provide a transparent and analytically tractable description of the induced performance--communication trade-off. This viewpoint complements existing event-triggered and scheduling-based results while avoiding the complexity of explicit schedule optimization.
+Markov decision process (MDP) formulations have been employed to study optimal communication and sensing policies in networked systems.
+In this line of work, communication decisions are treated as control actions, and dynamic programming is used to derive optimal or structured policies.
+However, the resulting state spaces are often high-dimensional, leading to significant computational challenges.
+Moreover, the connection between MDP-based scheduling policies and system-level stability or robustness interpretations is typically not made explicit.
 
+From a complementary perspective, input-to-state stability (ISS) has been used to analyze networked and event-triggered control systems by interpreting estimation or communication-induced errors as exogenous or endogenous disturbances.
+Recent work has shown that intermittent communication induces a grow-and-reset structure in the estimation error, enabling communication-regulated practical stability and transparent performance bounds.
+While these analyses provide valuable system-level insight, they do not yield finite-horizon optimal scheduling policies or explicit performance--communication trade-off curves.
 
-\begin{figure*}[t]
-    \centering
-    \includegraphics[
-        width=0.95\linewidth,
-        trim= 5 300 5 230,
-        clip,
-    ]{figs/ssc_framework.png}
-    \caption{Sensing--Communication--Control (SCC) framework with event-triggered communication.
-    The sensor (e.g., UAV) continuously measures the system state, while state updates are transmitted only when the controller-side prediction error exceeds a threshold~$\delta$.
-    Communication imperfections such as packet loss and finite-bit quantization are explicitly modeled.
-    Upon successful reception, the controller resets its state estimate and computes the control input using a fixed LQR law, closing the feedback loop.
-    This event-triggered grow-and-reset mechanism enables communication-regulated stability and performance--communication trade-offs.}
-    \label{fig:scc_framework}
-\end{figure*}
+The present work bridges these lines of research.
+We formulate finite-horizon communication scheduling under packet-dropping channels as an information-state MDP, in which the controller-side estimation error covariance constitutes a sufficient state for decision making.
+This formulation yields a principled benchmark for optimal scheduling via dynamic programming.
+At the same time, we connect the resulting policies to a communication-regulated stability interpretation, explaining threshold-type scheduling rules as mechanisms that regulate endogenous disturbances induced by estimation uncertainty.
+In contrast to prior work, our approach simultaneously addresses stochastic packet losses, finite-horizon performance--communication trade-offs, and system-level interpretation within a unified framework.
 
 \section{System Model and Communication Setup}
 
 \subsection{Plant Dynamics}
-We consider a discrete-time linear time-invariant (LTI) model for an unmanned platform given by
+We consider a discrete-time linear time-invariant (LTI) system described by
 \begin{equation}
 x_{k+1} = A x_k + B u_k + w_k,
 \label{eq:lti}
 \end{equation}
-where $x_k \in \mathbb{R}^n$ denotes the system state, $u_k \in \mathbb{R}^m$ is the control input, and $w_k$ represents bounded exogenous disturbances.
+where $x_k \in \mathbb{R}^n$ denotes the system state, $u_k \in \mathbb{R}^m$ is the control input, and $w_k$ is a zero-mean process noise with covariance $Q \succeq 0$.
+The pair $(A,B)$ is assumed stabilizable.
 
-To ground the analysis in a representative unmanned aerial vehicle (UAV) scenario, we consider a standard discrete-time kinematic model capturing translational motion in three-dimensional space. The state is defined as
+The controller applies a fixed state-feedback law of the form
 \[
-x_k \triangleq \begin{bmatrix} p_k^\top & v_k^\top \end{bmatrix}^\top \in \mathbb{R}^6,
+u_k = K \hat{x}_k,
 \]
-where $p_k \in \mathbb{R}^3$ and $v_k \in \mathbb{R}^3$ denote the position and velocity of the UAV, respectively. The control input $u_k \in \mathbb{R}^3$ corresponds to the commanded acceleration.
+where $\hat{x}_k$ denotes the controller-side state estimate.
+Throughout the paper, the feedback gain $K$ is assumed to be given and chosen such that the nominal closed-loop system is stable.
 
-With sampling period $h>0$, the dynamics can be written as
-\begin{equation}
-\begin{aligned}
-p_{k+1} &= p_k + h v_k + \tfrac{1}{2} h^2 u_k, \\
-v_{k+1} &= v_k + h u_k,
-\end{aligned}
-\label{eq:uav_dynamics}
-\end{equation}
-which admits the compact state-space representation~\eqref{eq:lti} with
+\subsection{Estimation Error Dynamics}
+The controller maintains a Kalman filter driven by the received measurements.
+When $\gamma_k = 1$, a standard measurement update is performed; otherwise, the estimator operates in prediction mode.
+
+Let
 \[
-A =
-\begin{bmatrix}
-I_3 & h I_3 \\
-0 & I_3
-\end{bmatrix},
+P_k := \mathbb{E}\!\left[(x_k - \hat{x}_k)(x_k - \hat{x}_k)^\top\right]
+\]
+denote the controller-side estimation error covariance.
+Conditioned on the current covariance $P_k$ and transmission decision $a_k$, the covariance evolves according to
+\begin{equation}
+P_{k+1} =
+\begin{cases}
+\mathcal{T}(P_k), & \text{if } \gamma_k = 0,\\[1mm]
+\mathcal{M}\!\big(\mathcal{T}(P_k)\big), & \text{if } \gamma_k = 1,
+\end{cases}
+\label{eq:Pk_update}
+\end{equation}
+where $\mathcal{T}(\cdot)$ and $\mathcal{M}(\cdot)$ denote the standard Kalman time-update and measurement-update operators, respectively.
+
+
+\subsection{Estimation Error Dynamics}
+The controller maintains a Kalman filter driven by the received measurements.
+When $\gamma_k=1$, a standard measurement update is performed; otherwise, the estimator operates in prediction mode.
+
+Let
+\[
+P_k := \mathbb{E}\big[(x_k-\hat{x}_k)(x_k-\hat{x}_k)^\top\big]
+\]
+denote the controller-side estimation error covariance.
+Conditioned on $(P_k,a_k)$, the covariance evolves according to
+\begin{equation}
+P_{k+1} =
+\begin{cases}
+\mathcal{T}(P_k), & \text{if } \gamma_k=0,\\[1mm]
+\mathcal{M}(\mathcal{T}(P_k)), & \text{if } \gamma_k=1,
+\end{cases}
+\label{eq:Pk_update}
+\end{equation}
+where $\mathcal{T}(\cdot)$ and $\mathcal{M}(\cdot)$ denote the standard Kalman time and measurement update operators, respectively.
+
+\paragraph*{Remark}
+The controller observes $\gamma_k$ through acknowledgement signals and can therefore exactly track the evolution of the estimation error covariance.
+As a result, the covariance $P_k$ constitutes a sufficient information state for communication scheduling under the assumed linear--Gaussian setting, even in the presence of packet losses.
+
+\section{MDP Formulation for Communication Scheduling}
+
+\subsection{Information-State MDP}
+We formulate the communication scheduling problem as a finite-horizon Markov decision process (MDP) defined on the controller-side estimation error covariance.
+
+\paragraph*{State}
+The MDP state at time $k$ is given by
+\[
+s_k := P_k,
+\]
+where $P_k$ denotes the estimation error covariance of the controller-side Kalman filter.
+As discussed in Section~III, acknowledgement signals allow the controller to exactly track $P_k$, which constitutes a sufficient information state for scheduling decisions under the assumed linear--Gaussian setting.
+
+\paragraph*{Action}
+The control action corresponds to the transmission decision
+\[
+a_k \in \{0,1\},
+\]
+where $a_k = 1$ indicates that the sensor attempts to transmit the current measurement, and $a_k = 0$ corresponds to no transmission attempt.
+
+\paragraph*{State Transition}
+Given the current state $P_k$ and action $a_k$, the next covariance $P_{k+1}$ evolves according to the stochastic update rule~\eqref{eq:Pk_update}.
+The randomness arises solely from the packet reception variable $\eta_k$, which is modeled as an independent Bernoulli random variable.
+Consequently, the covariance evolution defines a controlled Markov process on the space of positive semidefinite matrices.
+
+\paragraph*{Stage Cost}
+To capture the trade-off between estimation performance and communication usage, we define the stage cost as
+\begin{equation}
+c(P_k,a_k) := \mathrm{tr}(P_k) + \lambda a_k,
+\label{eq:stage_cost}
+\end{equation}
+where $\mathrm{tr}(P_k)$ penalizes estimation uncertainty and $\lambda > 0$ weights the cost of attempting a transmission.
+This cost structure reflects a standard scalar proxy for estimation quality and enables transparent tuning of the performance--communication trade-off.
+
+\subsection{Finite-Horizon Optimization Problem}
+Over a finite horizon of length $T$, we consider the optimization problem
+\begin{equation}
+\min_{\pi}\ 
+\mathbb{E}^{\pi}\!\left[
+\sum_{k=0}^{T}
+\big(\mathrm{tr}(P_k) + \lambda a_k\big)
+\right],
 \quad
-B =
-\begin{bmatrix}
-\tfrac{1}{2} h^2 I_3 \\
-h I_3
-\end{bmatrix}.
-\]
-
-This model captures the dominant translational dynamics of a UAV operating in regimes where attitude dynamics are stabilized by a fast inner-loop controller. The proposed event-triggered sensing--communication--control framework is developed for the general LTI form~\eqref{eq:lti}, while the UAV model~\eqref{eq:uav_dynamics} serves as a concrete and practically relevant instantiation used in simulations.
-
-\subsection{Perfect State Measurement and Intermittent Updates}
-To isolate the fundamental performance--communication trade-off induced solely by communication constraints, we assume linear state measurements of the form
-\begin{equation}
-y_k = C x_k + v_k,
-\label{eq:measurement}
+a_k = \pi_k(P_k),
+\label{eq:MDP_problem}
 \end{equation}
-where $v_k$ denotes zero-mean measurement noise with covariance $R \succ 0$. The process disturbance $w_k$ in~\eqref{eq:lti} is assumed to be zero-mean with covariance $Q \succeq 0$.
+where $\pi = \{\pi_0,\pi_1,\dots,\pi_T\}$ denotes a scheduling policy that maps the current covariance $P_k$ to a transmission decision $a_k$.
+The expectation is taken with respect to the packet loss process $\{\eta_k\}$.
 
-Communication constraints are modeled via intermittent state updates, a standard abstraction in networked control systems capturing packet drops as well as limited transmission opportunities~\cite{schenato2007foundations,hespanha2007survey}. Let $\gamma_k \in \{0,1\}$ indicate whether a measurement update is successfully delivered to the controller at time $k$, where $\gamma_k = 1$ corresponds to a successful update and $\gamma_k = 0$ indicates no update.
+The objective in~\eqref{eq:MDP_problem} does not aim to yield globally optimal closed-loop control.
+Rather, it provides a principled and computationally tractable benchmark that isolates the role of communication decisions through their impact on estimation uncertainty over a finite horizon.
 
-The controller maintains a state estimate $\hat{x}_k$. Upon receiving a measurement update, the estimate is corrected; otherwise, it is propagated in open loop according to the plant model. Specifically,
+\paragraph*{Remark}
+The finite-horizon formulation in~\eqref{eq:MDP_problem} explicitly captures transient effects and time-varying trade-offs that are not reflected in infinite-horizon average-cost or discounted-cost criteria.
+This is particularly relevant in mission-driven applications, where performance over a prescribed time window is of primary interest.
+
+\section{Dynamic Programming and Threshold Policies}
+
+\subsection{Dynamic Programming Recursion}
+To solve the finite-horizon MDP in~\eqref{eq:MDP_problem}, we employ dynamic programming.
+Define the cost-to-go function at time $k$ as
 \begin{equation}
-\hat{x}_k =
+V_k(P) := \min_{\pi_{k:T}}
+\mathbb{E}\!\left[
+\sum_{t=k}^{T}
+\big(\mathrm{tr}(P_t) + \lambda a_t\big)
+\,\big|\, P_k = P
+\right],
+\end{equation}
+where the minimization is taken over all admissible scheduling policies from time $k$ to $T$.
+
+The terminal cost is defined as
+\[
+V_{T+1}(P) = 0,
+\]
+and the cost-to-go functions satisfy the Bellman recursion
+\begin{equation}
+V_k(P) =
+\min_{a\in\{0,1\}}
+\left(
+\mathrm{tr}(P) + \lambda a
++ \mathbb{E}\!\left[
+V_{k+1}\big(f(P,a,\eta)\big)
+\right]
+\right),
+\label{eq:bellman}
+\end{equation}
+where $f(\cdot)$ denotes the stochastic covariance update induced by~\eqref{eq:Pk_update}, and the expectation is taken with respect to the packet reception variable $\eta$.
+
+The recursion in~\eqref{eq:bellman} yields an optimal scheduling policy $\pi_k^\star(P)$ on the information state $P_k$ for each stage $k$.
+In general, the value function $V_k(\cdot)$ is defined on the space of positive semidefinite matrices and does not admit a closed-form expression.
+In practice, the recursion can be solved numerically via state discretization or approximation techniques, yielding an MDP-optimal scheduling policy that serves as a finite-horizon benchmark.
+
+\subsection{Structural Properties and Threshold-Type Policies}
+The stage cost in~\eqref{eq:stage_cost} is monotone increasing in the estimation error covariance through $\mathrm{tr}(P)$.
+Moreover, intermittent communication induces a characteristic grow-and-reset evolution of the covariance: in the absence of successful transmissions, the covariance grows according to the open-loop dynamics, while successful receptions trigger a contraction through the Kalman measurement update.
+
+These properties suggest that the relative advantage of transmitting increases as the estimation uncertainty grows.
+As a result, the MDP-optimal policy often exhibits a structure in which transmission is preferred once the covariance exceeds a certain level.
+This observation motivates the study of threshold-type scheduling policies of the form
+\begin{equation}
+a_k = \mathbf{1}\{\mathrm{tr}(P_k) > \delta_k\},
+\label{eq:threshold_policy}
+\end{equation}
+where $\delta_k$ denotes a (possibly time-varying) threshold.
+
+We emphasize that~\eqref{eq:threshold_policy} is not claimed to be optimal in general.
+Rather, it provides a low-complexity, interpretable approximation to the MDP-optimal policy that captures the dominant dependence of the scheduling decision on the magnitude of the estimation uncertainty.
+Such policies naturally balance estimation performance and communication usage under packet-dropping channels.
+
+\paragraph*{Interpretation via Communication-Regulated Uncertainty}
+Under certainty-equivalent control, the estimation error enters the closed-loop state dynamics as an endogenous input whose magnitude is governed by the estimation error covariance.
+The grow-and-reset covariance dynamics induced by intermittent communication therefore translate directly into a regulated disturbance process acting on the closed-loop system.
+
+From this perspective, threshold-type scheduling rules can be interpreted as explicit uncertainty regulators: by enforcing transmissions when the covariance exceeds a prescribed level, these policies prevent unbounded growth of the estimation error and confine the closed-loop state to a controlled neighborhood.
+This interpretation is consistent with communication-regulated input-to-state stability and practical stability viewpoints developed in the event-triggered and networked control literature.
+
+\section{Simulation Studies}
+
+This section evaluates finite-horizon communication scheduling under packet drops.
+The objectives are: (i) to quantify the estimation--communication trade-off over a finite horizon, (ii) to benchmark structured event-triggered heuristics against an MDP-optimal scheduling solution, and (iii) to assess robustness to channel and model mismatch, including bursty packet losses beyond the i.i.d.\ assumption.
+
+\subsection{Setup, Metrics, and Baselines}
+We consider discrete-time LTI systems of the form~\eqref{eq:lti}--\eqref{eq:measurement}.
+Unless otherwise stated, the controller applies a fixed certainty-equivalent feedback $u_k = K\hat{x}_k$, where $K$ is an LQR gain designed for the nominal pair $(A,B)$.
+Packet reception follows $\eta_k \sim \mathrm{Bernoulli}(p)$ and acknowledgement signals allow the controller to observe $\gamma_k = a_k\eta_k$.
+
+\paragraph*{Performance Metrics}
+We report the following finite-horizon measures:
+\begin{align*}
+J_P &:= \mathbb{E}\!\left[\sum_{k=0}^{T} \mathrm{tr}(P_k)\right], \\
+J_C &:= \mathbb{E}\!\left[\sum_{k=0}^{T} a_k\right], \\
+J_X &:= \mathbb{E}\!\left[\sum_{k=0}^{T} \|x_k\|^2\right],
+\end{align*}
+where $J_P$ and $J_C$ align with the MDP objective, and $J_X$ serves as a closed-loop proxy to illustrate the effect of estimation quality under certainty-equivalent control.
+All expectations are approximated via Monte Carlo averaging over independent realizations of process noise, measurement noise, and packet drops.
+
+\paragraph*{Baseline Policies}
+We compare:
+\begin{itemize}
+\item \textbf{MDP-optimal (DP):} a policy computed by numerically solving the finite-horizon Bellman recursion~\eqref{eq:bellman}.
+\item \textbf{Fixed-threshold (ET):} $a_k=\mathbf{1}\{\mathrm{tr}(P_k)>\delta\}$ with threshold $\delta$ tuned as described below.
+\item \textbf{Periodic:} attempt transmission every $N$ steps.
+\item \textbf{Always/None:} $a_k\equiv 1$ and $a_k\equiv 0$.
+\end{itemize}
+
+\subsection{DP Implementation Details (Reproducibility)}
+The MDP state is the estimation error covariance $P_k$, which lies in a continuous matrix space.
+To obtain a reproducible finite-horizon benchmark, we adopt a scalar information state
+\[
+s_k := \mathrm{tr}(P_k),
+\]
+and compute a numerical DP policy on a discretized grid of $s$ values.
+
+\paragraph*{State Discretization}
+Let $\mathcal{S}=\{s^{(1)},\dots,s^{(M)}\}$ be a uniform grid on $[s_{\min}, s_{\max}]$, where $s_{\min}=\mathrm{tr}(P_{\mathrm{ss}})$ is the steady-state covariance trace under always-transmit, and $s_{\max}$ is chosen large enough to cover trajectories under no/rare communication.
+When a transition produces $s_{k+1}$ outside $[s_{\min}, s_{\max}]$, it is clipped to the nearest boundary.
+
+\paragraph*{Approximate Transition}
+For each grid point $s^{(i)}$, we associate a representative covariance matrix $P^{(i)}$ satisfying $\mathrm{tr}(P^{(i)})=s^{(i)}$ and generate the corresponding next-state traces
+\[
+s^{(i)}_{0} = \mathrm{tr}\!\big(\mathcal{T}(P^{(i)})\big),\qquad
+s^{(i)}_{1} = \mathrm{tr}\!\big(\mathcal{M}(\mathcal{T}(P^{(i)}))\big),
+\]
+corresponding to $\gamma_k=0$ and $\gamma_k=1$, respectively.
+The stochastic next state under action $a$ is then
+\[
+s_{k+1}=
 \begin{cases}
-\hat{x}_k^{-} + K_k (y_k - C \hat{x}_k^{-}), & \gamma_k = 1,\\
-A \hat{x}_{k-1} + B u_{k-1} = \hat{x}_k^{-}, & \gamma_k = 0,
+s^{(i)}_{0}, & a=0,\\
+s^{(i)}_{0}, & a=1,\ \eta_k=0,\\
+s^{(i)}_{1}, & a=1,\ \eta_k=1.
 \end{cases}
-\label{eq:estimator}
-\end{equation}
-where $\hat{x}_k^{-}$ denotes the one-step state prediction.
-
-The correction gain $K_k$ and the associated estimation error covariance $P_k$ are computed using a standard discrete-time Kalman filter. In the absence of communication constraints, the Kalman filter follows the classical five-step recursion:
-\begin{enumerate}
-\item \emph{State prediction:}
-\begin{equation}
-\hat{x}_k^{-} = A \hat{x}_{k-1} + B u_{k-1}.
-\end{equation}
-
-\item \emph{Covariance prediction:}
-\begin{equation}
-P_k^{-} = A P_{k-1} A^\top + Q.
-\end{equation}
-
-\item \emph{Kalman gain computation:}
-\begin{equation}
-K_k = P_k^{-} C^\top (C P_k^{-} C^\top + R)^{-1}.
-\end{equation}
-
-\item \emph{State update:}
-\begin{equation}
-\hat{x}_k = \hat{x}_k^{-} + K_k (y_k - C \hat{x}_k^{-}).
-\end{equation}
-
-\item \emph{Covariance update:}
-\begin{equation}
-P_k = (I - K_k C) P_k^{-}.
-\end{equation}
-\end{enumerate}
-
-Under intermittent communication, the measurement update steps are applied only when $\gamma_k = 1$. When $\gamma_k = 0$, the estimator operates purely in prediction mode, i.e., $\hat{x}_k = \hat{x}_k^{-}$, and the covariance evolves as $P_k = P_k^{-}$.
-
-Define the estimation (prediction) error as
-\begin{equation}
-\tilde{x}_k \triangleq x_k - \hat{x}_k.
-\label{eq:tilde_def}
-\end{equation}
-Under~\eqref{eq:estimator}, the estimation error exhibits a \emph{grow-and-reset} evolution: it is contracted through the measurement update when $\gamma_k = 1$, and propagates according to the open-loop system dynamics when $\gamma_k = 0$. Hence, the effect of communication on the closed-loop system is entirely mediated through the growth and reset of the estimation error.
-
-\section{Event-Triggered Communication and Co-Design Objective}
-
-\subsection{Event-Triggered Update Rule}
-We adopt an error-based event-triggered state update rule based on the estimation uncertainty generated by the intermittent Kalman filter. Specifically, the communication indicator $\gamma_k \in \{0,1\}$ is defined as
-\begin{equation}
-\gamma_k =
-\begin{cases}
-1, & \mathrm{tr}(P_k) > \delta,\\
-0, & \text{otherwise},
-\end{cases}
-\label{eq:trigger_rule}
-\end{equation}
-where $\delta > 0$ is a tunable triggering threshold and $P_k$ denotes the estimation error covariance at time $k$ generated by the intermittent Kalman recursion under the threshold $\delta$. Consequently, both $P_k$ and $\gamma_k$ evolve as sequences induced by the choice of $\delta$.
-
-Smaller values of $\delta$ lead to more frequent state updates and improved estimation and control performance, whereas larger values reduce communication usage at the expense of larger transient deviations. The fundamental question of how frequently control and estimation updates should be performed under communication constraints has been systematically investigated in the literature~\cite{chen2020often}.
-
-\subsection{Performance--Communication Trade-Off}
-Over a finite mission horizon $T$, we quantify performance using the cumulative estimation uncertainty
-\begin{equation}
-J'(\delta) \triangleq \sum_{k=0}^{T} \mathrm{tr}(P_k),
-\label{eq:perf_cost}
-\end{equation}
-and communication usage by the total number of delivered state updates
-\begin{equation}
-N_{\mathrm{tx}}(\delta) \triangleq \sum_{k=0}^{T} \gamma_k.
-\label{eq:tx_count}
-\end{equation}
-The SCC co-design problem is to characterize the trade-off between estimation performance and communication usage as the triggering threshold $\delta$ varies, and to provide stability guarantees for the resulting event-triggered closed loop.
-
-We formalize this trade-off through the following finite-horizon co-design problem:
-\begin{equation}
-\min_{\delta > 0}\ J(\delta)
-\ \triangleq\ J'(\delta) + \lambda N_{\mathrm{tx}}(\delta)
-\ =\ \sum_{k=0}^{T} \mathrm{tr}(P_k) + \lambda \sum_{k=0}^{T} \gamma_k,
-\label{eq:prob_P1}
-\end{equation}
-where $\lambda \ge 0$ is a weighting parameter that balances closed-loop performance against communication usage.
-
-\begin{remark}[Communication-Regulated Disturbance Interpretation]
-Theorem~\ref{thm:main} reveals that intermittent communication induces a distinct form of robustness that differs fundamentally from classical disturbance-driven ISS. In the considered setting, the prediction error $\tilde{x}_k$ acts as an endogenous disturbance to the nominal closed-loop system. However, its magnitude is not externally imposed; instead, it is actively regulated by communication events. Whenever the error exceeds the triggering threshold, a state update is transmitted and the disturbance is reset.
-
-From this perspective, the threshold $\delta$ directly determines the allowable disturbance magnitude and thus governs the ultimate bound of the closed-loop state. As $\delta \to 0$, communication becomes increasingly frequent and the system approaches nominal asymptotic stability. Conversely, larger thresholds reduce communication usage at the cost of a larger invariant set. This interpretation clarifies the fundamental performance--communication trade-off and highlights event-triggered communication as a \emph{state-dependent disturbance regulation mechanism}, rather than merely a scheduling strategy.
-\end{remark}
-
-\section{Threshold Selection and Solution Procedure}
-
-The co-design problem~\eqref{eq:prob_P1} is a one-dimensional threshold selection problem induced by the indicator-type event-triggering rule~\eqref{eq:trigger_rule}. Due to the discrete switching behavior of the communication indicator $\gamma_k$, the objective function is generally non-smooth and non-convex with respect to the threshold~$\delta$. As a result, gradient-based optimization methods are not applicable.
-
-Instead, we adopt a direct evaluation approach that exploits the low dimensionality of the design parameter. Specifically, the triggering threshold~$\delta$ is swept over a logarithmically spaced grid. For each candidate value of~$\delta$, the closed-loop system is simulated over the finite horizon~$T$ using the intermittent Kalman filter and fixed LQR controller described in Section~III. The resulting estimation uncertainty $J'(\delta)=\sum_{k=0}^{T}\mathrm{tr}(P_k)$ and communication usage $N_{\mathrm{tx}}(\delta)=\sum_{k=0}^{T}\gamma_k$ are recorded.
-
-This procedure yields a discrete approximation of the performance--communication trade-off curve. For a given weighting parameter~$\lambda$, the corresponding operating point is obtained by minimizing $J'(\delta)+\lambda N_{\mathrm{tx}}(\delta)$ over the grid. The same threshold sweep is used to generate the Pareto curves reported in Section~V.
-
-\section{Simulation Results}
-
-This section presents numerical simulations validating the proposed communication-regulated SCC framework. The experiments are designed to (i) characterize how the triggering threshold~$\delta$ simultaneously regulates communication usage, control performance, and control energy, (ii) illustrate the grow-and-reset mechanism and the resulting state-transmission error, (iii) evaluate performance under communication and energy constraints representative of agricultural missions, and (iv) benchmark the threshold-based policy against an optimal scheduling oracle.
-
-\subsection{Simulation Setup}
-
-We consider a planar UAV modeled as a discrete-time double-integrator with sampling period $T_s=0.1$~s. The state is $x_k=[p_x,v_x,p_y,v_y]^\top$ and the control input is $u_k=[a_x,a_y]^\top$. A fixed LQR controller is designed offline under full-state availability with weighting matrices $Q=\mathrm{diag}(10,1,10,1)$ and $R=0.1I$.
-
-State estimation is performed using the intermittent Kalman filter described in Section~III. Small process disturbances are included to induce nontrivial growth of estimation uncertainty between communication events. All simulations are conducted over a finite horizon~$T$ and averaged over multiple Monte Carlo runs with randomized initial conditions.
-
-Communication usage is measured by the total number of successfully delivered state updates,
-\[
-N_{\mathrm{tx}} = \sum_{k=0}^{T}\gamma_k,
 \]
-which is consistent with the co-design problem formulation in~\eqref{eq:prob_P1}.
+The value function $V_{k+1}(\cdot)$ is evaluated at off-grid points via linear interpolation on $\mathcal{S}$.
 
-\subsection{Experiment~1: Threshold-Induced Performance, Energy, and Communication Trade-Off}
+\paragraph*{Backward Recursion and Policy Extraction}
+We compute $V_k(\cdot)$ backward from $k=T$ to $0$ using~\eqref{eq:bellman}, and store the minimizing action at each grid point to obtain a time-varying lookup policy $a=\pi_k^{\mathrm{DP}}(s)$.
+This DP policy is then evaluated in Monte Carlo simulations using the true covariance update~\eqref{eq:Pk_update} and the true trace $s_k=\mathrm{tr}(P_k)$.
 
-We first examine how the triggering threshold~$\delta$ shapes the trade-off between closed-loop performance, control energy, and communication usage. The threshold is swept over a logarithmically spaced grid. For each value of~$\delta$, the closed-loop system is simulated under the event-triggered update rule~\eqref{eq:trigger_rule}.
+\paragraph*{Monte Carlo Configuration}
+All simulation results are obtained via Monte Carlo averaging.
+Unless otherwise stated, we use a finite horizon of length $T=50$ and perform $N_{\mathrm{MC}}=1000$ independent Monte Carlo trials.
+Each trial uses independent realizations of process noise, measurement noise, and packet losses.
+To ensure reproducibility, random seeds are fixed across policies when comparing different scheduling strategies under identical operating conditions.
+Reported performance metrics correspond to sample means over Monte Carlo trials.
 
-Closed-loop performance is quantified by the quadratic state-regulation cost
+\subsection{Threshold Tuning Procedure}
+To compare ET and DP at matched communication levels, we tune the ET threshold $\delta$ via bisection to satisfy a target budget.
+Given a target expected usage $J_C^{\mathrm{tar}}$ (e.g., the usage achieved by the DP policy at a chosen $\lambda$), we find $\delta$ such that
 \[
-J_x(\delta)=\sum_{k=0}^{T} x_k^\top Q x_k,
+\mathbb{E}\!\left[\sum_{k=0}^T a_k(\delta)\right]\approx J_C^{\mathrm{tar}}.
 \]
-while control energy is measured by
+In practice, we estimate $J_C(\delta)$ by Monte Carlo and apply bisection on $\delta$ over a bracket $[\delta_{\min},\delta_{\max}]$ until the budget mismatch is within a prescribed tolerance.
+This tuning uses no future information and the resulting ET policy remains causal, depending only on the current covariance trace.
+
+\subsection{Experiment A: Finite-Horizon Trade-off Curves}
+\paragraph*{Objective}
+Characterize the finite-horizon trade-off between estimation uncertainty and communication usage under packet drops, and benchmark ET and periodic scheduling against the DP policy.
+
+\paragraph*{Protocol}
+Fix the packet success probability $p$ and sweep the communication weight $\lambda$ in~\eqref{eq:stage_cost}.
+For each $\lambda$, compute the DP policy and evaluate $(J_P,J_C)$ and $J_X$.
+For ET, tune $\delta$ to match the DP communication level $J_C$ at each operating point.
+For periodic scheduling, vary the period $N$ to obtain comparable communication levels.
+
+\paragraph*{Outputs}
+We report: (i) Pareto curves $J_P$ versus $J_C$ for DP/ET/periodic, and (ii) the corresponding closed-loop proxy $J_X$ versus $J_C$.
+
+\paragraph*{Takeaways}
+The DP policy provides the lowest $J_P$ for a given $J_C$, serving as a principled finite-horizon benchmark.
+ET policies closely track the DP frontier over a wide operating range, while periodic scheduling exhibits a larger suboptimality gap under stringent communication constraints.
+The trends in $J_X$ mirror those in $J_P$, supporting the interpretation that improved estimation quality translates to improved regulated closed-loop behavior under certainty-equivalent control.
+
+\paragraph*{Statistical Variability}
+In addition to sample means, we compute empirical $95\%$ confidence intervals for $J_P$ and $J_X$ across Monte Carlo trials.
+Where appropriate, confidence bands are shown to illustrate variability.
+The intervals are sufficiently tight and do not alter the relative ordering of the compared scheduling policies.
+
+\subsection{Experiment B: Time-Domain Grow-and-Reset Dynamics}
+\paragraph*{Objective}
+Visualize the grow-and-reset mechanism induced by intermittent communication and illustrate the impact of packet drops on reset timing.
+
+\paragraph*{Protocol}
+Select a representative operating point (e.g., a mid-range $J_C$ from Experiment~A).
+Simulate trajectories of $\mathrm{tr}(P_k)$, transmission attempts $a_k$, and successful receptions $\gamma_k$.
+In addition to a representative single trajectory plot, we compute the empirical distribution of inter-reception times (i.e., the number of steps between $\gamma_k=1$ events) over Monte Carlo trials.
+
+\paragraph*{Outputs}
+We plot: (i) a time-series of $\mathrm{tr}(P_k)$ with markers for $a_k$ and $\gamma_k$ (and the threshold level for ET), and (ii) a histogram or mean/variance summary of inter-reception times.
+
+\paragraph*{Takeaways}
+Trajectories exhibit monotone growth of $\mathrm{tr}(P_k)$ during prediction-only intervals and sharp contractions upon successful reception, with packet drops prolonging growth intervals.
+The inter-reception statistics quantify how channel reliability reshapes the reset pattern and provides a compact, seed-robust summary of the grow-and-reset dynamics.
+
+\subsection{Experiment C: Sensitivity to Packet Success Probability}
+\paragraph*{Objective}
+Assess how channel reliability affects estimation and closed-loop performance, and whether scheduling policies degrade gracefully as $p$ decreases.
+
+\paragraph*{Protocol}
+Design DP and ET policies at a nominal $p_0$.
+Then evaluate them across a range of packet success probabilities $p \in \{p_1,\dots,p_L\}$ in two modes:
+(i) \emph{no retuning}, where the nominal policies are applied unchanged, and
+(ii) \emph{retuning}, where policy parameters (DP via recomputation, ET via threshold tuning) are redesigned for each $p$.
+
+\paragraph*{Outputs}
+We report $J_P(p)$ and $J_X(p)$ under both no-retune and retune modes.
+
+\paragraph*{Takeaways}
+As $p$ decreases, performance degrades for all methods.
+The retuning curves quantify the achievable performance under redesign, while the no-retune curves quantify robustness to channel mismatch.
+ET exhibits graceful degradation and often preserves the qualitative trade-off structure, whereas DP retains a consistent advantage as a benchmark across the full reliability range.
+
+\subsection{Experiment D: Robustness to Mismatch and Bursty Packet Drops}
+\paragraph*{Objective}
+Evaluate robustness to modeling mismatch and disturbances, including bursty packet losses beyond the i.i.d.\ Bernoulli assumption.
+
+\paragraph*{Protocol}
+Policies are designed under nominal parameters $(p_0,Q_0,R_0)$ and then evaluated under perturbed conditions:
+\begin{itemize}
+\item \textbf{Channel mismatch:} apply the nominal policies under $p \neq p_0$ (no retuning).
+\item \textbf{Noise mismatch:} evaluate under $(Q,R)\neq(Q_0,R_0)$ and/or increased disturbance magnitude.
+\item \textbf{Bursty losses (Gilbert--Elliott):} replace the i.i.d.\ channel with a two-state Markov model, where the channel alternates between a \emph{good} state with success probability $p_g$ and a \emph{bad} state with success probability $p_b$, with transition probabilities $\Pr(g\to b)=\alpha$ and $\Pr(b\to g)=\beta$.
+The average success rate is controlled by $(p_g,p_b,\alpha,\beta)$ while temporal correlation is introduced by $(\alpha,\beta)$.
+\end{itemize}
+
+\paragraph*{Outputs}
+We report normalized degradation relative to the nominal i.i.d.\ evaluation, e.g.,
 \[
-E_u(\delta)=\sum_{k=0}^{T} u_k^\top R u_k.
+J_P/J_P^{\mathrm{nom}},\qquad J_X/J_X^{\mathrm{nom}},
 \]
-Communication usage is measured by~$N_{\mathrm{tx}}(\delta)$.
+across mismatch scenarios, and visualize sensitivity as a function of mismatch magnitude (e.g., $|p-p_0|$) or burstiness level (e.g., decreasing $\beta$).
 
-Fig.~\ref{fig:pareto} reports the resulting trade-offs. Event-triggered communication (ET) is compared with optimally tuned periodic (PER) and random (RAND) transmission under matched numbers of delivered updates. Each point on the ET curve corresponds to a distinct threshold value~$\delta$. The results reveal a clear Pareto frontier and a pronounced knee region, indicating operating points where substantial reductions in communication and control energy are achieved with only moderate degradation in state regulation performance. The family of Pareto curves obtained under different disturbance intensities further shows that higher uncertainty environments shift the frontier and require more frequent communication for comparable performance.
-
-\begin{figure*}[t]
-    \centering
-    \includegraphics[width=0.9\linewidth]{figs/fig_A_pareto_tradeoff.pdf}
-    \caption{Performance--energy--communication trade-off induced by the triggering threshold~$\delta$. Event-triggered communication (ET) is compared with periodic (PER) and random (RAND) transmission under matched numbers of delivered updates. Each ET point corresponds to a different~$\delta$. Multiple curves illustrate the effect of different disturbance levels.}
-    \label{fig:pareto}
-\end{figure*}
-
-\subsection{Experiment~2: Grow-and-Reset Mechanism and State-Transmission Error}
-
-To illustrate the mechanism underlying the analytical results, we examine the time-domain evolution of the estimation uncertainty and the controller-side state-transmission error for a representative threshold~$\delta^\star$ selected from the knee region of Fig.~\ref{fig:pareto}.
-
-Fig.~\ref{fig:time_response} shows the evolution of the estimation uncertainty $\mathrm{tr}(P_k)$, the state-transmission error $\|x_k-\hat{x}_k\|$, and the corresponding communication events. During intervals without communication, the estimator operates in prediction mode and both uncertainty and state-transmission error grow. Once $\mathrm{tr}(P_k)$ exceeds the threshold~$\delta^\star$, a communication event is triggered, the estimator is reset, and the transmission error is sharply reduced.
-
-This grow-and-reset behavior confines the closed-loop state within a bounded envelope whose size scales proportionally with~$\delta^\star$, consistent with the communication-regulated practical stability result in Theorem~\ref{thm:main}.
-
-\begin{figure}[t]
-    \centering
-    \includegraphics[width=0.9\width \linewidth]{figs/fig_B_time_response.pdf}
-    \caption{Time-domain illustration of the grow-and-reset mechanism. The estimation uncertainty and state-transmission error grow between communication events and are reset once the threshold~$\delta$ is exceeded. Vertical markers indicate communication events.}
-    \label{fig:time_response}
-\end{figure}
-
-\subsection{Experiment~3: Budgeted Operation under Communication and Energy Constraints}
-
-We next evaluate the proposed framework under explicit communication and energy constraints representative of long-duration agricultural missions. A communication budget $N_{\max}$ is imposed on the total number of delivered updates.
-
-For event-triggered communication, the threshold~$\delta$ is selected such that $N_{\mathrm{tx}}(\delta)\leq N_{\max}$. For periodic transmission, the update period is tuned to satisfy the same budget. Performance is evaluated in terms of state-regulation cost and control energy.
-
-Fig.~\ref{fig:budget} shows that, across a wide range of budgets, event-triggered communication consistently achieves lower control cost and reduced control energy compared to periodic transmission. The advantage is particularly pronounced in communication-limited regimes, highlighting the benefit of state-dependent allocation of communication resources.
-
-\begin{figure}[t]
-    \centering
-    \includegraphics[width=0.9\linewidth]{figs/fig_C_budget_curves.pdf}
-    \caption{Closed-loop performance under explicit communication and energy constraints. Event-triggered communication (ET) is compared with periodic transmission (PER) under matched communication budgets.}
-    \label{fig:budget}
-\end{figure}
-
-\subsection{Experiment~4: Benchmarking against an Optimal Scheduling Oracle}
-
-Finally, we benchmark the threshold-based policy against a finite-horizon optimal scheduling oracle obtained via dynamic programming (DP). To ensure tractability, the scheduling problem is formulated on a reduced-order state representing the estimation uncertainty, $s_k=\mathrm{tr}(P_k)$, with binary actions $\gamma_k\in\{0,1\}$. The stage cost is defined as $s_k+\lambda\gamma_k$.
-
-Fig.~\ref{fig:oracle} compares the performance of the DP oracle, the threshold-based event-triggered policy, and periodic transmission under matched communication usage. The threshold-based policy closely approaches the oracle performance while significantly outperforming periodic transmission. This result indicates that simple thresholding captures much of the benefit of optimal scheduling, while avoiding the complexity of explicit schedule optimization.
-
-\begin{figure}[t]
-    \centering
-    \includegraphics[width=0.85\linewidth]{figs/fig_D_oracle.pdf}
-    \caption{Comparison with a finite-horizon dynamic programming (DP) oracle. The DP oracle provides a lower bound on achievable cost (i.e., an upper bound on performance). The threshold-based policy closely tracks the oracle while substantially outperforming periodic transmission.}
-    \label{fig:oracle}
-\end{figure}
-
-\subsection{Summary of Simulation Results}
-
-Across four complementary experiments, the simulations demonstrate that the triggering threshold~$\delta$ serves as an effective system-level design parameter. It simultaneously regulates communication usage, control energy, and closed-loop performance, induces a grow-and-reset estimation mechanism consistent with the theoretical analysis, adapts naturally to different uncertainty levels, and achieves near-oracle performance under budget constraints. Together, these results validate the proposed communication-regulated SCC framework for practical unmanned systems.
-
-
-
-\section{Conclusion}
-
-This paper studied a fundamental performance--communication trade-off in closed-loop unmanned systems subject to intermittent state updates. Focusing on a linear system controlled by a fixed LQR, we showed that intermittent communication can be interpreted as a grow-and-reset mechanism acting on the controller-side prediction error, providing a transparent system-level description of its impact on closed-loop behavior.
-
-An error-based event-triggered communication policy was analyzed, with the triggering threshold serving as an explicit design parameter. We established communication-regulated practical stability guarantees, showing that the ultimate bound of the closed-loop system scales with the threshold. Simulation results motivated by precision agriculture scenarios revealed clear Pareto-type trade-offs, demonstrating that substantial communication savings can be achieved with only moderate performance degradation. Overall, the results indicate that lightweight event-triggered updates can yield meaningful communication efficiency gains without redesigning the feedback controller, providing a practical foundation for communication-constrained unmanned systems.
+\paragraph*{Takeaways}
+Both DP and ET degrade gracefully under moderate mismatch.
+Under bursty losses, performance degradation is more pronounced due to extended outage periods; nevertheless, covariance-based scheduling continues to regulate uncertainty growth and maintains bounded envelopes in typical operating regimes.
+These results support the interpretation of scheduling as an uncertainty/disturbance regulation mechanism and highlight sensitivity to temporal correlation in packet drops.
