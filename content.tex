@@ -333,15 +333,15 @@ All curves are obtained by Monte Carlo averaging over independent noise and pack
 
 \subsection{Finite-Horizon Trade-Off Curves}
 Fig.~\ref{fig:tradeoff} reports finite-horizon trade-off curves obtained by sweeping $\lambda$ in~\eqref{eq:mdp_problem}.
-In our experiments, the DP-trace baseline provides a strong finite-horizon benchmark and typically improves upon periodic and threshold-based scheduling at matched communication usage.
-Importantly, the DP curve provides an actionable reference: it quantifies how far simple heuristic policies lie from a finite-horizon dynamic-programming baseline over the entire trade-off range.
+The left panel shows the achievable estimation--communication trade-off for \textbf{DP-trace} (sweeping $\lambda$), \textbf{ET} (sweeping the threshold $\delta$), and \textbf{PER} (sweeping the period $M$).
+The right panel reports the estimation-cost gap $\Delta J_P := J_P^{\mathrm{heur}}-J_P^{\mathrm{DP}}$ under matched communication usage $J_C$, which makes the performance difference relative to the DP benchmark directly interpretable.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\linewidth]{figs/fig_A_tradeoff_curves.pdf}
-\caption{Finite-horizon performance--communication trade-offs obtained by sweeping $\lambda$.
-Left: estimation cost $J_P$ vs.\ communication usage $J_C$.
-Right: closed-loop proxy $J_X$ vs.\ $J_C$.
+\caption{Finite-horizon trade-offs and benchmark gaps.
+Left: estimation cost $J_P$ vs.\ communication usage $J_C$ for DP-trace, ET, and PER.
+Right: estimation-cost gap $\Delta J_P$ relative to DP-trace under matched $J_C$ (lower is better).
 }
 \label{fig:tradeoff}
 \end{figure*}
@@ -365,16 +365,18 @@ Fig.~\ref{fig:gapcurve} plots the estimation-cost gap under matched communicatio
 }{}
 
 \subsection{Grow-and-Reset Dynamics Under Drops}
-Fig.~\ref{fig:timeresp} shows a typical time response of $\mathrm{tr}(P_k)$ and the corresponding transmission attempts and receptions.
-Between receptions, the covariance grows according to $\mathcal{T}(\cdot)$; a successful reception triggers an update $\mathcal{M}(\cdot)$ that ``resets'' uncertainty.
-This grow-and-reset pattern is the mechanism exploited by scheduling policies, and it is captured exactly by the covariance-state MDP transition~\eqref{eq:P_update}.
+Fig.~\ref{fig:timeresp} shows a representative \textbf{DP-trace} rollout.
+The policy is approximately a \emph{time-varying} trace threshold: it attempts transmission when $\mathrm{tr}(P_k)$ exceeds a time-dependent switching value $s_k^\star$ induced by the finite-horizon Bellman recursion.
+Between successful receptions (ACKs), the covariance grows according to $\mathcal{T}(\cdot)$; a successful reception triggers an update $\mathcal{M}(\cdot)$ that ``resets'' uncertainty.
+As the horizon approaches, $s_k^\star$ increases, reflecting the diminishing value of information when fewer future stages remain.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figs/fig_B_time_response.pdf}
-\caption{Time response illustrating covariance growth between receptions and resets upon successful updates.
-Vertical markers indicate attempted transmissions and successful receptions (ACKs).
-}
+\caption{Sample DP-trace rollout.
+Top: covariance trace $\mathrm{tr}(P_k)$ and the induced time-varying DP switching threshold $s_k^\star$.
+Middle: transmission attempts and successful receptions (ACKs).
+Bottom: estimation error norm $\|x_k-\hat{x}_k\|_2$.}
 \label{fig:timeresp}
 \end{figure}
 
@@ -387,21 +389,24 @@ The gap quantifies the value of adapting the scheduler to channel conditions, an
 \centering
 \includegraphics[width=\linewidth]{figs/fig_C_sensitivity_p.pdf}
 \caption{Sensitivity to packet success probability $p$.
-Retuning policies to the true $p$ improves both estimation cost $J_P$ and closed-loop proxy $J_X$ relative to deploying nominal schedules without retuning.
+Left: the Lagrangian objective $J_\lambda = J_P + \lambda J_C$ under a fixed $\lambda$.
+Right: the corresponding communication usage $J_C$.
+Retuning the scheduler to the true $p$ reduces $J_\lambda$ relative to deploying a nominal policy under mismatch.
 }
 \label{fig:sensitivity}
 \end{figure*}
 
 \subsection{Robustness to Model Mismatch and Bursty Losses}
 Finally, Fig.~\ref{fig:robustness} evaluates robustness under (i) mismatch in the assumed i.i.d.\ drop probability and (ii) bursty drops modeled by a Gilbert--Elliott channel.
-We report normalized degradation relative to nominal performance.
-While mismatch degrades all schedules, covariance-aware DP policies remain competitive and provide a useful oracle reference even when modeling assumptions are violated.
+We report normalized performance relative to the nominal i.i.d.\ setting.
+For the bursty case, we keep the mean success probability fixed and vary the temporal correlation (mean loss-burst length), isolating the impact of burstiness beyond the marginal drop rate.
+While mismatch and burstiness can degrade performance, DP-based policies remain a useful finite-horizon reference for benchmarking heuristic schedulers.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\linewidth]{figs/fig_D_robustness.pdf}
-\caption{Robustness under channel mismatch (left) and bursty losses (right), shown as normalized degradation relative to nominal performance.
-}
+\caption{Robustness under channel mismatch (left) and bursty losses (right), shown as normalized performance relative to the nominal i.i.d.\ setting.
+Right panel varies burstiness (mean loss-burst length) at fixed mean success probability.}
 \label{fig:robustness}
 \end{figure*}
 

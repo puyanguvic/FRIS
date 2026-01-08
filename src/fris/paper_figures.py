@@ -125,12 +125,14 @@ def _closest_by_jc(res_list: list[dict], target: float) -> dict:
 
 
 def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
-    """Figure A: finite-horizon trade-off curves."""
+    """Figure A: finite-horizon trade-off curves + gap vs DP."""
     apply_ieee_style()
 
-    deltas = np.logspace(np.log10(0.05), np.log10(3.0), 18).tolist()
-    periods = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40]
-    lambdas = np.logspace(-2, 0.7, 9)
+    # Curves are shown as mean values (no error bars) to avoid clutter.
+    # Include lambda=0 as the always-transmit endpoint of the Lagrangian relaxation.
+    lambdas = np.concatenate(([0.0], np.logspace(-2, 2, 10)))
+    deltas = [0.0] + np.logspace(np.log10(0.05), np.log10(2.0), 14).tolist()
+    periods = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20]
 
     seeds = _make_seeds(cfg)
     et_res = monte_carlo(cfg, "ET", deltas=deltas, seeds=seeds)
@@ -143,40 +145,35 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
         res["lambda"] = float(lamb)
         dp_points.append(res)
 
-    et_match = []
-    per_match = []
-    for dp in dp_points:
-        jc_mean, _ = _mean_ci(dp["J_C"])
-        et_match.append(_closest_by_jc(et_res, jc_mean))
-        per_match.append(_closest_by_jc(per_res, jc_mean))
-
-    def _collect(points: list[dict], key: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        xs, ys, yci = [], [], []
+    def _collect(points: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]:
+        xs, ys = [], []
         for pnt in points:
             x_m, _ = _mean_ci(pnt["J_C"])
-            y_m, y_hw = _mean_ci(pnt[key])
+            y_m, _ = _mean_ci(pnt[key])
             xs.append(x_m)
             ys.append(y_m)
-            yci.append(y_hw)
         xs = np.asarray(xs, dtype=float)
         ys = np.asarray(ys, dtype=float)
-        yci = np.asarray(yci, dtype=float)
         order = np.argsort(xs)
-        return xs[order], ys[order], yci[order]
+        return xs[order], ys[order]
 
-    x_dp, y_dp, yci_dp = _collect(dp_points, "J_P")
-    x_et, y_et, yci_et = _collect(et_match, "J_P")
-    x_per, y_per, yci_per = _collect(per_match, "J_P")
+    x_dp, y_dp = _collect(dp_points, "J_P")
+    x_et, y_et = _collect(et_res, "J_P")
+    x_per, y_per = _collect(per_res, "J_P")
 
-    x_dp_x, y_dp_x, yci_dp_x = _collect(dp_points, "J_X")
-    x_et_x, y_et_x, yci_et_x = _collect(et_match, "J_X")
-    x_per_x, y_per_x, yci_per_x = _collect(per_match, "J_X")
+    # Gap curves at matched communication usage (interpolate baselines at DP x-axis).
+    gap_et = np.full_like(y_dp, np.nan)
+    if x_et.size > 1:
+        gap_et = np.interp(x_dp, x_et, y_et, left=np.nan, right=np.nan) - y_dp
+    gap_per = np.full_like(y_dp, np.nan)
+    if x_per.size > 1:
+        gap_per = np.interp(x_dp, x_per, y_per, left=np.nan, right=np.nan) - y_dp
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.4))
 
-    ax1.errorbar(x_dp, y_dp, yerr=yci_dp, marker="D", label="DP-trace")
-    ax1.errorbar(x_et, y_et, yerr=yci_et, marker="o", label="ET")
-    ax1.errorbar(x_per, y_per, yerr=yci_per, marker="s", label="PER")
+    ax1.plot(x_dp, y_dp, "D-", label="DP-trace")
+    ax1.plot(x_et, y_et, "o-", label="ET")
+    ax1.plot(x_per, y_per, "s--", label="PER")
     ax1.set_xlabel(r"$J_C$")
     ax1.set_ylabel(r"$J_P$")
     ax1.grid(True, alpha=0.3)
@@ -184,11 +181,11 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
     ax1.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax1.legend(loc="best", frameon=True, borderpad=0.3)
 
-    ax2.errorbar(x_dp_x, y_dp_x, yerr=yci_dp_x, marker="D", label="DP-trace")
-    ax2.errorbar(x_et_x, y_et_x, yerr=yci_et_x, marker="o", label="ET")
-    ax2.errorbar(x_per_x, y_per_x, yerr=yci_per_x, marker="s", label="PER")
+    ax2.plot(x_dp, gap_et, "o-", label=r"ET gap ($J_P - J_P^{DP}$)")
+    ax2.plot(x_dp, gap_per, "s--", label=r"PER gap ($J_P - J_P^{DP}$)")
+    ax2.axhline(0.0, color="k", linewidth=0.8, alpha=0.6)
     ax2.set_xlabel(r"$J_C$")
-    ax2.set_ylabel(r"$J_X$")
+    ax2.set_ylabel(r"$\Delta J_P$")
     ax2.grid(True, alpha=0.3)
     ax2.xaxis.set_major_locator(MaxNLocator(nbins=5))
     ax2.yaxis.set_major_locator(MaxNLocator(nbins=5))
@@ -198,20 +195,49 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
     savefig(fig, outdir, "fig_A_tradeoff_curves")
     plt.close(fig)
 
-    mid_idx = len(dp_points) // 2
-    delta_mid = float(et_match[mid_idx]["param"])
-    return delta_mid
+    mid_idx = len(lambdas) // 2
+    return float(lambdas[mid_idx])
 
 
-def figure_B_time_response(cfg: SimConfig, outdir: Path, delta: float) -> None:
-    """Figure B: grow-and-reset visualization."""
+def figure_B_time_response(cfg: SimConfig, outdir: Path, lamb: float) -> None:
+    """Figure B: sample rollout illustrating finite-horizon, time-varying thresholds."""
     apply_ieee_style()
 
     cfg1 = SimConfig(**cfg.__dict__)
-    cfg1.delta = float(delta)
 
     rng = np.random.default_rng(int(cfg.seed) + 123)
-    out = simulate(cfg1, "ET", rng=rng)
+    # Compute a representative DP-trace policy and its (approximate) time-varying
+    # trace threshold s_k^* from the action table.
+    A, _ = double_integrator_2d(cfg1.Ts)
+    n = A.shape[0]
+    C, p = _measurement_matrices(cfg1, n)
+    Qw = (float(cfg1.sigma_w) ** 2) * np.eye(n, dtype=float)
+    Rv = (float(cfg1.sigma_v) ** 2) * np.eye(p, dtype=float)
+    P0 = float(cfg1.P0_scale) * np.eye(n, dtype=float)
+    s_grid, actions = dp_trace_policy(
+        P0=P0,
+        A=A,
+        C=C,
+        Qw=Qw,
+        Rv=Rv,
+        p_success=float(cfg1.p_success),
+        lamb=float(lamb),
+        horizon=int(cfg1.T_steps),
+        grid_size=180,
+    )
+    thresholds = np.full(int(cfg1.T_steps), np.nan, dtype=float)
+    for k in range(int(cfg1.T_steps)):
+        idx = np.where(actions[k] == 1)[0]
+        if idx.size == 0:
+            continue
+        i1 = int(idx[0])
+        if i1 <= 0:
+            thresholds[k] = float(s_grid[0])
+        else:
+            thresholds[k] = 0.5 * float(s_grid[i1 - 1] + s_grid[i1])
+
+    policy_fn = make_trace_policy_fn(s_grid, actions)
+    out = simulate(cfg1, "DP", rng=rng, policy_fn=policy_fn)
 
     P_trace = out["P_trace"]
     e_tilde = out["tilde_x_norm"]
@@ -219,23 +245,48 @@ def figure_B_time_response(cfg: SimConfig, outdir: Path, delta: float) -> None:
     delta_arr = out["delta"]
     t = np.arange(cfg1.T_steps) * cfg1.Ts
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(3.5, 2.6), sharex=True)
+    # Drop the first sample (large initial covariance) for readability.
+    k0 = 1
+    t_plot = t[k0:]
+    P_plot = P_trace[k0:]
+    th_plot = thresholds[k0:]
+    e_plot = e_tilde[k0:]
+    gamma_plot = gamma[k0:]
+    delta_plot = delta_arr[k0:]
 
-    ax1.plot(t, P_trace, label=r"$\mathrm{tr}(P_k)$")
-    ax1.axhline(cfg1.delta, linestyle="--", linewidth=0.8, label=r"threshold $\delta$")
-    idx_tx = np.where(gamma > 0)[0]
-    idx_rx = np.where(delta_arr > 0)[0]
-    if idx_tx.size > 0:
-        ax1.vlines(t[idx_tx], ymin=0, ymax=np.max(P_trace), linewidth=0.5, alpha=0.4, label="attempt")
-    if idx_rx.size > 0:
-        ax1.vlines(t[idx_rx], ymin=0, ymax=np.max(P_trace), linewidth=0.8, alpha=0.6, label="reception")
+    fig, (ax1, ax_ev, ax2) = plt.subplots(
+        3,
+        1,
+        figsize=(3.5, 3.2),
+        sharex=True,
+        gridspec_kw={"height_ratios": [2.0, 0.7, 1.3]},
+    )
+
+    ax1.plot(t_plot, P_plot, label=r"$\mathrm{tr}(P_k)$")
+    ax1.plot(t_plot, th_plot, "--", linewidth=0.9, label=r"DP threshold $s_k^\star$")
     ax1.set_ylabel(r"$\mathrm{tr}(P_k)$")
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="best", frameon=True, borderpad=0.3)
 
-    ax2.plot(t, e_tilde, label=r"$\|x_k-\hat{x}_k\|_2$")
-    if idx_rx.size > 0:
-        ax2.vlines(t[idx_rx], ymin=0, ymax=np.max(e_tilde), linewidth=0.6, alpha=0.5)
+    idx_tx = np.where(gamma_plot > 0)[0]
+    idx_rx = np.where(delta_plot > 0)[0]
+    times_tx = t_plot[idx_tx] if idx_tx.size > 0 else np.array([], dtype=float)
+    times_rx = t_plot[idx_rx] if idx_rx.size > 0 else np.array([], dtype=float)
+
+    ax_ev.eventplot(
+        [times_tx, times_rx],
+        colors=["tab:gray", "tab:blue"],
+        lineoffsets=[0.6, 1.4],
+        linelengths=[0.7, 0.7],
+        linewidths=[0.8, 0.9],
+    )
+    ax_ev.set_yticks([0.6, 1.4])
+    ax_ev.set_yticklabels(["attempt", "ACK"])
+    ax_ev.set_ylim(0.0, 2.0)
+    ax_ev.grid(True, axis="x", alpha=0.3)
+    ax_ev.tick_params(axis="x", labelbottom=False)
+
+    ax2.plot(t_plot, e_plot, label=r"$\|x_k-\hat{x}_k\|_2$")
     ax2.set_xlabel("Time (s)")
     ax2.set_ylabel("Error norm")
     ax2.grid(True, alpha=0.3)
@@ -257,19 +308,17 @@ def figure_C_sensitivity(cfg: SimConfig, outdir: Path, lamb: float) -> None:
     seeds = _make_seeds(cfg_nom)
     policy_nom = _dp_trace_policy_fn(cfg_nom, float(lamb))
 
-    # match ET to nominal DP communication
-    dp_nom = _mc_eval_policy(cfg_nom, seeds, "DP", policy_fn=policy_nom)
-    jc_nom, _ = _mean_ci(dp_nom["J_C"])
+    # Define a nominal ET threshold by minimizing the same Lagrangian objective
+    # J_lambda = J_P + lambda J_C at the nominal success probability.
+    deltas = [0.0] + np.logspace(np.log10(0.05), np.log10(2.0), 14).tolist()
+    et_nom_sweep = monte_carlo(cfg_nom, "ET", deltas=deltas, seeds=seeds)
+    obj_means = [float((r["J_P"] + float(lamb) * r["J_C"]).mean()) for r in et_nom_sweep]
+    delta_nom = float(et_nom_sweep[int(np.argmin(obj_means))]["param"])
 
-    deltas = np.logspace(np.log10(0.05), np.log10(3.0), 18).tolist()
-    et_sweep = monte_carlo(cfg_nom, "ET", deltas=deltas, seeds=seeds)
-    et_nom = _closest_by_jc(et_sweep, jc_nom)
-    delta_nom = float(et_nom["param"])
-
-    jp_nr, jx_nr = [], []
-    jp_rt, jx_rt = [], []
-    jp_nr_et, jx_nr_et = [], []
-    jp_rt_et, jx_rt_et = [], []
+    obj_dp_nr, obj_dp_rt = [], []
+    obj_et_nr, obj_et_rt = [], []
+    jc_dp_nr, jc_dp_rt = [], []
+    jc_et_nr, jc_et_rt = [], []
 
     for p_succ in p_vals:
         cfg_eval = SimConfig(**cfg.__dict__)
@@ -277,46 +326,46 @@ def figure_C_sensitivity(cfg: SimConfig, outdir: Path, lamb: float) -> None:
 
         # no-retune (use nominal policy)
         dp_nr = _mc_eval_policy(cfg_eval, seeds, "DP", policy_fn=policy_nom)
-        jp_nr.append(_mean_ci(dp_nr["J_P"])[0])
-        jx_nr.append(_mean_ci(dp_nr["J_X"])[0])
-
-        et_nr_cfg = SimConfig(**cfg_eval.__dict__)
-        et_nr_cfg.delta = delta_nom
-        et_nr = _mc_eval_policy(et_nr_cfg, seeds, "ET")
-        jp_nr_et.append(_mean_ci(et_nr["J_P"])[0])
-        jx_nr_et.append(_mean_ci(et_nr["J_X"])[0])
+        obj_dp_nr.append(float((dp_nr["J_P"] + float(lamb) * dp_nr["J_C"]).mean()))
+        jc_dp_nr.append(float(dp_nr["J_C"].mean()))
 
         # retune
         policy_rt = _dp_trace_policy_fn(cfg_eval, float(lamb))
         dp_rt = _mc_eval_policy(cfg_eval, seeds, "DP", policy_fn=policy_rt)
-        jp_rt.append(_mean_ci(dp_rt["J_P"])[0])
-        jx_rt.append(_mean_ci(dp_rt["J_X"])[0])
+        obj_dp_rt.append(float((dp_rt["J_P"] + float(lamb) * dp_rt["J_C"]).mean()))
+        jc_dp_rt.append(float(dp_rt["J_C"].mean()))
 
-        et_sweep_rt = monte_carlo(cfg_eval, "ET", deltas=deltas, seeds=seeds)
-        et_rt = _closest_by_jc(et_sweep_rt, _mean_ci(dp_rt["J_C"])[0])
-        et_rt_cfg = SimConfig(**cfg_eval.__dict__)
-        et_rt_cfg.delta = float(et_rt["param"])
-        et_rt_eval = _mc_eval_policy(et_rt_cfg, seeds, "ET")
-        jp_rt_et.append(_mean_ci(et_rt_eval["J_P"])[0])
-        jx_rt_et.append(_mean_ci(et_rt_eval["J_X"])[0])
+        # ET: reuse a sweep to get both no-retune and retune variants.
+        et_sweep = monte_carlo(cfg_eval, "ET", deltas=deltas, seeds=seeds)
+        # no-retune = deploy delta_nom under p_succ
+        idx_nom = int(np.argmin([abs(float(r["param"]) - delta_nom) for r in et_sweep]))
+        et_nr = et_sweep[idx_nom]
+        obj_et_nr.append(float((et_nr["J_P"] + float(lamb) * et_nr["J_C"]).mean()))
+        jc_et_nr.append(float(et_nr["J_C"].mean()))
+
+        # retune = choose delta minimizing the Lagrangian objective at p_succ
+        objs = [float((r["J_P"] + float(lamb) * r["J_C"]).mean()) for r in et_sweep]
+        et_rt = et_sweep[int(np.argmin(objs))]
+        obj_et_rt.append(float((et_rt["J_P"] + float(lamb) * et_rt["J_C"]).mean()))
+        jc_et_rt.append(float(et_rt["J_C"].mean()))
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.4))
 
-    ax1.plot(p_vals, jp_nr, "D-", label="DP-trace no-retune")
-    ax1.plot(p_vals, jp_rt, "D--", label="DP-trace retune")
-    ax1.plot(p_vals, jp_nr_et, "o-", label="ET no-retune")
-    ax1.plot(p_vals, jp_rt_et, "o--", label="ET retune")
+    ax1.plot(p_vals, obj_dp_nr, "D-", label="DP-trace no-retune")
+    ax1.plot(p_vals, obj_dp_rt, "D--", label="DP-trace retune")
+    ax1.plot(p_vals, obj_et_nr, "o-", label="ET no-retune")
+    ax1.plot(p_vals, obj_et_rt, "o--", label="ET retune")
     ax1.set_xlabel(r"$p$")
-    ax1.set_ylabel(r"$J_P$")
+    ax1.set_ylabel(r"$J_{\lambda}=J_P+\lambda J_C$")
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="best", frameon=True, borderpad=0.3)
 
-    ax2.plot(p_vals, jx_nr, "D-", label="DP-trace no-retune")
-    ax2.plot(p_vals, jx_rt, "D--", label="DP-trace retune")
-    ax2.plot(p_vals, jx_nr_et, "o-", label="ET no-retune")
-    ax2.plot(p_vals, jx_rt_et, "o--", label="ET retune")
+    ax2.plot(p_vals, jc_dp_nr, "D-", label="DP-trace no-retune")
+    ax2.plot(p_vals, jc_dp_rt, "D--", label="DP-trace retune")
+    ax2.plot(p_vals, jc_et_nr, "o-", label="ET no-retune")
+    ax2.plot(p_vals, jc_et_rt, "o--", label="ET retune")
     ax2.set_xlabel(r"$p$")
-    ax2.set_ylabel(r"$J_X$")
+    ax2.set_ylabel(r"$J_C$")
     ax2.grid(True, alpha=0.3)
     ax2.legend(loc="best", frameon=True, borderpad=0.3)
 
@@ -358,13 +407,24 @@ def figure_D_robustness(cfg: SimConfig, outdir: Path, lamb: float) -> None:
         et_ratio_p.append(_mean_ci(et_eval["J_P"])[0] / jp_nom)
         et_ratio_x.append(_mean_ci(et_eval["J_X"])[0] / jx_nom)
 
-    # bursty losses (Gilbert-Elliott)
-    betas = np.array([0.02, 0.05, 0.1, 0.2, 0.35, 0.5])
+    # bursty losses (Gilbert-Elliott) while keeping the *mean* success rate fixed.
+    # We use a 2-state channel with success in the good state and loss in the bad
+    # state. Scaling both transition probabilities changes burstiness (temporal
+    # correlation) without changing the stationary success probability.
+    alpha0 = 0.02  # good->bad
+    pi_good = float(cfg.p_success)
+    beta0 = (alpha0 * pi_good) / max(1e-6, (1.0 - pi_good))  # bad->good
+    scales = np.array([0.25, 0.5, 1.0, 2.0, 5.0], dtype=float)
+    bad_run = 1.0 / np.clip(beta0 * scales, 1e-6, None)
     dp_ratio_b, et_ratio_b = [], []
-    for beta in betas:
+    for s in scales:
         cfg_ge = SimConfig(**cfg.__dict__)
         cfg_ge.channel_model = "ge"
-        cfg_ge.p_bad_to_good = float(beta)
+        cfg_ge.loss_good = 0.0
+        cfg_ge.loss_bad = 1.0
+        cfg_ge.p_good_to_bad = float(alpha0 * s)
+        cfg_ge.p_bad_to_good = float(beta0 * s)
+
         dp_eval = _mc_eval_policy(cfg_ge, seeds, "DP", policy_fn=policy_nom)
         dp_ratio_b.append(_mean_ci(dp_eval["J_P"])[0] / jp_nom)
 
@@ -384,9 +444,9 @@ def figure_D_robustness(cfg: SimConfig, outdir: Path, lamb: float) -> None:
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="best", frameon=True, borderpad=0.3)
 
-    ax2.plot(betas, dp_ratio_b, "D-", label="DP-trace (bursty)")
-    ax2.plot(betas, et_ratio_b, "o-", label="ET (bursty)")
-    ax2.set_xlabel(r"$\beta$ (bad$\to$good)")
+    ax2.plot(bad_run, dp_ratio_b, "D-", label="DP-trace (bursty)")
+    ax2.plot(bad_run, et_ratio_b, "o-", label="ET (bursty)")
+    ax2.set_xlabel(r"Mean loss-burst length $1/\beta$ (steps)")
     ax2.set_ylabel(r"$J_P/J_P^{nom}$")
     ax2.grid(True, alpha=0.3)
     ax2.legend(loc="best", frameon=True, borderpad=0.3)
@@ -606,6 +666,9 @@ def run_all(
 ) -> None:
     outdir_path = Path(outdir)
     cfg = SimConfig()
+    # Paper defaults: short horizon to reveal finite-horizon nonstationarity.
+    cfg.T_steps = 120
+    cfg.mc_runs = 40
 
     if fast:
         if mc_runs is None:
@@ -619,10 +682,10 @@ def run_all(
     if mc_runs is not None or t_steps is not None:
         print(f"[fris] running with mc_runs={cfg.mc_runs}, T_steps={cfg.T_steps}")
 
-    delta_mid = figure_A_tradeoff(cfg, outdir_path)
-    figure_B_time_response(cfg, outdir_path, delta_mid)
-    figure_C_sensitivity(cfg, outdir_path, lamb=0.2)
-    figure_D_robustness(cfg, outdir_path, lamb=0.2)
+    lamb_mid = figure_A_tradeoff(cfg, outdir_path)
+    figure_B_time_response(cfg, outdir_path, lamb_mid)
+    figure_C_sensitivity(cfg, outdir_path, lamb=lamb_mid)
+    figure_D_robustness(cfg, outdir_path, lamb=lamb_mid)
     if with_counterexample:
         figure_2_trace_not_enough(outdir_path, fast=fast)
 
