@@ -176,6 +176,9 @@ def simulate(
         innovation_norm=innovation_norm,
         tx_attempt=tx_attempt,
         tx_deliv=tx_deliv,
+        # Paper notation: gamma_k (attempt) and delta_k (delivered = gamma_k * eta_k).
+        gamma=tx_attempt,
+        delta=tx_deliv,
         P_trace=P_trace,
         N_attempt=N_attempt,
         N_deliv=N_deliv,

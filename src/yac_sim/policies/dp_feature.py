@@ -7,6 +7,11 @@ from ..common.kalman import cov_step
 
 
 def feature_trace_logdet(P: np.ndarray, eps: float = 1e-6) -> tuple[float, float]:
+    """Two-feature map phi(P) = (tr(P), logdet(P + eps I)).
+
+    This is used as a low-dimensional proxy for the covariance state in the
+    DP-2feature approximation.
+    """
     n = P.shape[0]
     P_eps = P + float(eps) * np.eye(n, dtype=float)
     sign, logdet = np.linalg.slogdet(P_eps)
@@ -32,6 +37,11 @@ def build_feature_grid(
     grid_shape: tuple[int, int],
     expand: float = 0.1,
 ) -> FeatureGrid:
+    """Build a feature grid and representative covariance prototypes.
+
+    Each feature-cell stores a representative covariance matrix chosen from the
+    provided samples (filled by nearest-neighbor propagation if empty).
+    """
     feats = np.array([feature_trace_logdet(P) for P in samples], dtype=float)
     f1_min, f1_max = feats[:, 0].min(), feats[:, 0].max()
     f2_min, f2_max = feats[:, 1].min(), feats[:, 1].max()
@@ -102,6 +112,7 @@ def sample_covariances(
     rng: np.random.Generator,
     tx_prob: float = 0.5,
 ) -> list[np.ndarray]:
+    """Generate a pool of reachable covariance samples via random scheduling."""
     samples: list[np.ndarray] = []
     for _ in range(int(n_rollouts)):
         P = P0.copy()
@@ -138,6 +149,15 @@ def dp_feature_policy(
     lamb: float,
     horizon: int,
 ) -> np.ndarray:
+    """Compute the finite-horizon DP-2feature policy table on a FeatureGrid.
+
+    Approximates the continuous covariance-state MDP by discretizing the feature
+    map phi(P) = (tr(P), logdet(P + eps I)) and running backward induction on
+    the resulting finite grid. The stage cost is tr(P) + lamb * gamma_k.
+
+    Returns an array actions[k, i, j] ∈ {0,1} approximating gamma_k^* at the
+    representative covariance stored in grid.reps[i, j].
+    """
     n1, n2 = grid.f1_grid.size, grid.f2_grid.size
     actions = np.zeros((int(horizon), n1, n2), dtype=int)
     V_next = np.zeros((n1, n2), dtype=float)
@@ -154,22 +174,22 @@ def dp_feature_policy(
                 i_pred, j_pred = _feature_to_index(f_pred[0], f_pred[1], grid)
                 i_upd, j_upd = _feature_to_index(f_upd[0], f_upd[1], grid)
                 stage = float(np.trace(P))
-                v0 = stage + V_next[i_pred, j_pred]
-                v1 = stage + float(lamb) + (
-                    (1.0 - p_succ) * V_next[i_pred, j_pred]
-                    + p_succ * V_next[i_upd, j_upd]
-                )
-                if v1 < v0:
+                V_pred = float(V_next[i_pred, j_pred])
+                V_upd = float(V_next[i_upd, j_upd])
+                q0 = V_pred
+                q1 = float(lamb) + ((1.0 - p_succ) * V_pred + p_succ * V_upd)
+                if q1 < q0:
                     actions[k, i, j] = 1
-                    V_curr[i, j] = v1
+                    V_curr[i, j] = stage + q1
                 else:
                     actions[k, i, j] = 0
-                    V_curr[i, j] = v0
+                    V_curr[i, j] = stage + q0
         V_next = V_curr
     return actions
 
 
 def make_feature_policy_fn(grid: FeatureGrid, actions: np.ndarray):
+    """Return policy_fn(k, P) implementing the DP-2feature action table."""
     def policy_fn(k: int, P: np.ndarray) -> bool:
         f1, f2 = feature_trace_logdet(P)
         i, j = _feature_to_index(f1, f2, grid)

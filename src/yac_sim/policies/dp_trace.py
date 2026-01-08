@@ -10,7 +10,11 @@ def scalar_kalman_step(
     Rv: np.ndarray,
     s: float,
 ) -> tuple[float, float]:
-    """Trace surrogate step using isotropic covariance P = (s/n) I."""
+    """One-step trace surrogate using isotropic covariance P ≈ (s/n)I.
+
+    Returns (s_pred, s_upd), where s_pred is the predicted trace and s_upd is the
+    trace after a (hypothetical) successful measurement update.
+    """
     n = A.shape[0]
     P = (float(s) / n) * np.eye(n, dtype=float)
     P_pred = A @ P @ A.T + Qw
@@ -49,6 +53,17 @@ def dp_trace_policy(
     horizon: int,
     grid_size: int = 180,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Compute the finite-horizon DP-trace policy table.
+
+    Uses the scalar information state s_k = tr(P_k) with an isotropic covariance
+    approximation P_k ≈ (s_k/n)I. Solves the finite-horizon Bellman recursion
+    for the stage cost s_k + lamb * gamma_k under Bernoulli delivery with
+    probability p_success.
+
+    Returns:
+      - s_grid: grid of scalar states s
+      - actions: array with actions[k, i] ∈ {0,1} approximating gamma_k^*(s_grid[i])
+    """
     s_min, s_max = trace_bounds(P0, A, C, Qw, Rv, horizon)
     s_grid = np.linspace(s_min * 0.9, s_max * 1.1, int(grid_size))
 
@@ -64,23 +79,23 @@ def dp_trace_policy(
             s_pred, s_upd = scalar_kalman_step(A, C, Qw, Rv, float(s_i))
             s_pred_c = float(np.clip(s_pred, s_lo, s_hi))
             s_upd_c = float(np.clip(s_upd, s_lo, s_hi))
-            v0 = s_i + np.interp(s_pred_c, s_grid, V_next)
-            v1 = s_i + float(lamb) + (
-                (1.0 - p_succ) * np.interp(s_pred_c, s_grid, V_next)
-                + p_succ * np.interp(s_upd_c, s_grid, V_next)
-            )
-            if v1 < v0:
+            V_pred = float(np.interp(s_pred_c, s_grid, V_next))
+            V_upd = float(np.interp(s_upd_c, s_grid, V_next))
+            q0 = V_pred
+            q1 = float(lamb) + ((1.0 - p_succ) * V_pred + p_succ * V_upd)
+            if q1 < q0:
                 actions[k, i] = 1
-                V_curr[i] = v1
+                V_curr[i] = float(s_i) + q1
             else:
                 actions[k, i] = 0
-                V_curr[i] = v0
+                V_curr[i] = float(s_i) + q0
         V_next = V_curr
 
     return s_grid, actions
 
 
 def make_trace_policy_fn(s_grid: np.ndarray, actions: np.ndarray):
+    """Return policy_fn(k, P) implementing the DP-trace action table."""
     def policy_fn(k: int, P: np.ndarray) -> bool:
         s = float(np.trace(P))
         idx = int(np.searchsorted(s_grid, s))

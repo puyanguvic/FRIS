@@ -10,6 +10,7 @@ from ..common.config import SimConfig
 from ..common.models import double_integrator_2d
 from ..common.sim_single import simulate, monte_carlo
 from ..common.utils import mean_ci95
+from ..policies.dp_trace import dp_trace_policy, make_trace_policy_fn
 
 
 def apply_ieee_style() -> None:
@@ -47,91 +48,25 @@ def _measurement_matrices(cfg: SimConfig, n: int) -> tuple[np.ndarray, int]:
     return C, p
 
 
-def _scalar_kalman_step(
-    A: np.ndarray,
-    C: np.ndarray,
-    Qw: np.ndarray,
-    Rv: np.ndarray,
-    s: float,
-) -> tuple[float, float]:
-    n = A.shape[0]
-    P = (s / n) * np.eye(n, dtype=float)
-    P_pred = A @ P @ A.T + Qw
-    S = C @ P_pred @ C.T + Rv
-    Kk = P_pred @ C.T @ np.linalg.pinv(S)
-    P_upd = (np.eye(n) - Kk @ C) @ P_pred
-    return float(np.trace(P_pred)), float(np.trace(P_upd))
-
-
-def _trace_bounds(cfg: SimConfig) -> tuple[float, float]:
+def _dp_trace_policy_fn(cfg: SimConfig, lamb: float, grid_size: int = 180):
     A, _ = double_integrator_2d(cfg.Ts)
     n = A.shape[0]
     C, p = _measurement_matrices(cfg, n)
     Qw = (float(cfg.sigma_w) ** 2) * np.eye(n, dtype=float)
     Rv = (float(cfg.sigma_v) ** 2) * np.eye(p, dtype=float)
-
-    s = float(cfg.P0_scale) * n
-    s_min, s_max = s, s
-    for _ in range(cfg.T_steps):
-        s_pred, s_upd = _scalar_kalman_step(A, C, Qw, Rv, s)
-        s_min = min(s_min, s_upd)
-        s_max = max(s_max, s_pred)
-        s = s_pred
-    return s_min, s_max
-
-
-def _dp_policy(cfg: SimConfig, lamb: float, grid_size: int = 180) -> tuple[np.ndarray, np.ndarray]:
-    A, _ = double_integrator_2d(cfg.Ts)
-    n = A.shape[0]
-    C, p = _measurement_matrices(cfg, n)
-    Qw = (float(cfg.sigma_w) ** 2) * np.eye(n, dtype=float)
-    Rv = (float(cfg.sigma_v) ** 2) * np.eye(p, dtype=float)
-
-    s_min, s_max = _trace_bounds(cfg)
-    s_grid = np.linspace(s_min * 0.9, s_max * 1.1, grid_size)
-    p_succ = float(cfg.p_success)
-
-    V_next = np.zeros_like(s_grid)
-    actions = np.zeros((cfg.T_steps, grid_size), dtype=int)
-
-    s_lo, s_hi = s_grid[0], s_grid[-1]
-
-    for k in range(cfg.T_steps - 1, -1, -1):
-        V_curr = np.zeros_like(s_grid)
-        for i, s_i in enumerate(s_grid):
-            s_pred, s_upd = _scalar_kalman_step(A, C, Qw, Rv, float(s_i))
-            s_pred_c = float(np.clip(s_pred, s_lo, s_hi))
-            s_upd_c = float(np.clip(s_upd, s_lo, s_hi))
-            v0 = s_i + np.interp(s_pred_c, s_grid, V_next)
-            v1 = s_i + lamb + (
-                (1.0 - p_succ) * np.interp(s_pred_c, s_grid, V_next)
-                + p_succ * np.interp(s_upd_c, s_grid, V_next)
-            )
-            if v1 < v0:
-                actions[k, i] = 1
-                V_curr[i] = v1
-            else:
-                actions[k, i] = 0
-                V_curr[i] = v0
-        V_next = V_curr
-
-    return s_grid, actions
-
-
-def _make_policy_fn(s_grid: np.ndarray, actions: np.ndarray):
-    def policy_fn(k: int, P: np.ndarray) -> bool:
-        s = float(np.trace(P))
-        idx = int(np.searchsorted(s_grid, s))
-        if idx <= 0:
-            idx = 0
-        elif idx >= s_grid.size:
-            idx = s_grid.size - 1
-        else:
-            if abs(s - s_grid[idx - 1]) < abs(s - s_grid[idx]):
-                idx -= 1
-        return bool(actions[k, idx])
-
-    return policy_fn
+    P0 = float(cfg.P0_scale) * np.eye(n, dtype=float)
+    s_grid, actions = dp_trace_policy(
+        P0=P0,
+        A=A,
+        C=C,
+        Qw=Qw,
+        Rv=Rv,
+        p_success=float(cfg.p_success),
+        lamb=float(lamb),
+        horizon=int(cfg.T_steps),
+        grid_size=int(grid_size),
+    )
+    return make_trace_policy_fn(s_grid, actions)
 
 
 def _make_seeds(cfg: SimConfig) -> list[int]:
@@ -188,8 +123,7 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
 
     dp_points = []
     for lamb in lambdas:
-        s_grid, actions = _dp_policy(cfg, float(lamb))
-        policy_fn = _make_policy_fn(s_grid, actions)
+        policy_fn = _dp_trace_policy_fn(cfg, float(lamb))
         res = _mc_eval_policy(cfg, seeds, "DP", policy_fn=policy_fn)
         res["lambda"] = float(lamb)
         dp_points.append(res)
@@ -225,7 +159,7 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.4))
 
-    ax1.errorbar(x_dp, y_dp, yerr=yci_dp, marker="D", label="DP")
+    ax1.errorbar(x_dp, y_dp, yerr=yci_dp, marker="D", label="DP-trace")
     ax1.errorbar(x_et, y_et, yerr=yci_et, marker="o", label="ET")
     ax1.errorbar(x_per, y_per, yerr=yci_per, marker="s", label="PER")
     ax1.set_xlabel(r"$J_C$")
@@ -235,7 +169,7 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
     ax1.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax1.legend(loc="best", frameon=True, borderpad=0.3)
 
-    ax2.errorbar(x_dp_x, y_dp_x, yerr=yci_dp_x, marker="D", label="DP")
+    ax2.errorbar(x_dp_x, y_dp_x, yerr=yci_dp_x, marker="D", label="DP-trace")
     ax2.errorbar(x_et_x, y_et_x, yerr=yci_et_x, marker="o", label="ET")
     ax2.errorbar(x_per_x, y_per_x, yerr=yci_per_x, marker="s", label="PER")
     ax2.set_xlabel(r"$J_C$")
@@ -306,8 +240,7 @@ def figure_C_sensitivity(cfg: SimConfig, outdir: Path, lamb: float) -> None:
     cfg_nom.p_success = float(cfg.p_success)
 
     seeds = _make_seeds(cfg_nom)
-    s_grid_nom, actions_nom = _dp_policy(cfg_nom, lamb)
-    policy_nom = _make_policy_fn(s_grid_nom, actions_nom)
+    policy_nom = _dp_trace_policy_fn(cfg_nom, float(lamb))
 
     # match ET to nominal DP communication
     dp_nom = _mc_eval_policy(cfg_nom, seeds, "DP", policy_fn=policy_nom)
@@ -339,8 +272,7 @@ def figure_C_sensitivity(cfg: SimConfig, outdir: Path, lamb: float) -> None:
         jx_nr_et.append(_mean_ci(et_nr["J_X"])[0])
 
         # retune
-        s_grid_rt, actions_rt = _dp_policy(cfg_eval, lamb)
-        policy_rt = _make_policy_fn(s_grid_rt, actions_rt)
+        policy_rt = _dp_trace_policy_fn(cfg_eval, float(lamb))
         dp_rt = _mc_eval_policy(cfg_eval, seeds, "DP", policy_fn=policy_rt)
         jp_rt.append(_mean_ci(dp_rt["J_P"])[0])
         jx_rt.append(_mean_ci(dp_rt["J_X"])[0])
@@ -355,8 +287,8 @@ def figure_C_sensitivity(cfg: SimConfig, outdir: Path, lamb: float) -> None:
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.4))
 
-    ax1.plot(p_vals, jp_nr, "D-", label="DP no-retune")
-    ax1.plot(p_vals, jp_rt, "D--", label="DP retune")
+    ax1.plot(p_vals, jp_nr, "D-", label="DP-trace no-retune")
+    ax1.plot(p_vals, jp_rt, "D--", label="DP-trace retune")
     ax1.plot(p_vals, jp_nr_et, "o-", label="ET no-retune")
     ax1.plot(p_vals, jp_rt_et, "o--", label="ET retune")
     ax1.set_xlabel(r"$p$")
@@ -364,8 +296,8 @@ def figure_C_sensitivity(cfg: SimConfig, outdir: Path, lamb: float) -> None:
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="best", frameon=True, borderpad=0.3)
 
-    ax2.plot(p_vals, jx_nr, "D-", label="DP no-retune")
-    ax2.plot(p_vals, jx_rt, "D--", label="DP retune")
+    ax2.plot(p_vals, jx_nr, "D-", label="DP-trace no-retune")
+    ax2.plot(p_vals, jx_rt, "D--", label="DP-trace retune")
     ax2.plot(p_vals, jx_nr_et, "o-", label="ET no-retune")
     ax2.plot(p_vals, jx_rt_et, "o--", label="ET retune")
     ax2.set_xlabel(r"$p$")
@@ -383,8 +315,7 @@ def figure_D_robustness(cfg: SimConfig, outdir: Path, lamb: float) -> None:
     apply_ieee_style()
 
     seeds = _make_seeds(cfg)
-    s_grid_nom, actions_nom = _dp_policy(cfg, lamb)
-    policy_nom = _make_policy_fn(s_grid_nom, actions_nom)
+    policy_nom = _dp_trace_policy_fn(cfg, float(lamb))
 
     dp_nom = _mc_eval_policy(cfg, seeds, "DP", policy_fn=policy_nom)
     jp_nom = _mean_ci(dp_nom["J_P"])[0]
@@ -429,16 +360,16 @@ def figure_D_robustness(cfg: SimConfig, outdir: Path, lamb: float) -> None:
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.4))
 
-    ax1.plot(p_vals, dp_ratio_p, "D-", label="DP $J_P$")
+    ax1.plot(p_vals, dp_ratio_p, "D-", label="DP-trace $J_P$")
     ax1.plot(p_vals, et_ratio_p, "o-", label="ET $J_P$")
-    ax1.plot(p_vals, dp_ratio_x, "D--", label="DP $J_X$")
+    ax1.plot(p_vals, dp_ratio_x, "D--", label="DP-trace $J_X$")
     ax1.plot(p_vals, et_ratio_x, "o--", label="ET $J_X$")
     ax1.set_xlabel(r"$p$")
     ax1.set_ylabel("Normalized degradation")
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="best", frameon=True, borderpad=0.3)
 
-    ax2.plot(betas, dp_ratio_b, "D-", label="DP (bursty)")
+    ax2.plot(betas, dp_ratio_b, "D-", label="DP-trace (bursty)")
     ax2.plot(betas, et_ratio_b, "o-", label="ET (bursty)")
     ax2.set_xlabel(r"$\beta$ (bad$\to$good)")
     ax2.set_ylabel(r"$J_P/J_P^{nom}$")
