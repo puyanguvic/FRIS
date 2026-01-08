@@ -1,34 +1,44 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
-import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+import numpy as np
 
-from ..common.config import SimConfig
-from ..common.models import double_integrator_2d
-from ..common.sim_single import simulate, monte_carlo
-from ..common.utils import mean_ci95
-from ..policies.dp_trace import dp_trace_policy, make_trace_policy_fn
+from .common.config import SimConfig
+from .common.models import double_integrator_2d
+from .common.sim_single import monte_carlo, simulate
+from .common.utils import dlqr, mean_ci95, norm2
+from .policies.dp_feature import (
+    build_feature_grid,
+    dp_feature_policy,
+    feature_trace_logdet,
+    make_feature_policy_fn,
+    sample_covariances,
+)
+from .policies.dp_trace import dp_trace_policy, make_trace_policy_fn
 
 
 def apply_ieee_style() -> None:
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.size": 8,
-        "axes.labelsize": 8,
-        "axes.titlesize": 8,
-        "legend.fontsize": 7,
-        "xtick.labelsize": 7,
-        "ytick.labelsize": 7,
-        "pdf.fonttype": 42,
-        "ps.fonttype": 42,
-        "axes.linewidth": 0.6,
-        "lines.linewidth": 1.0,
-        "lines.markersize": 3.5,
-        "grid.linewidth": 0.4,
-    })
+    plt.rcParams.update(
+        {
+            "font.family": "serif",
+            "font.size": 8,
+            "axes.labelsize": 8,
+            "axes.titlesize": 8,
+            "legend.fontsize": 7,
+            "xtick.labelsize": 7,
+            "ytick.labelsize": 7,
+            "pdf.fonttype": 42,
+            "ps.fonttype": 42,
+            "axes.linewidth": 0.6,
+            "lines.linewidth": 1.0,
+            "lines.markersize": 3.5,
+            "grid.linewidth": 0.4,
+        }
+    )
 
 
 def savefig(fig, outdir: Path, name: str) -> None:
@@ -42,8 +52,13 @@ def _measurement_matrices(cfg: SimConfig, n: int) -> tuple[np.ndarray, int]:
         C = np.eye(n, dtype=float)
         p = n
         return C, p
-    C = np.array([[1.0, 0.0, 0.0, 0.0],
-                  [0.0, 0.0, 1.0, 0.0]], dtype=float)
+    C = np.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ],
+        dtype=float,
+    )
     p = C.shape[0]
     return C, p
 
@@ -74,6 +89,10 @@ def _make_seeds(cfg: SimConfig) -> list[int]:
     return rng_master.integers(0, 2**31 - 1, size=int(cfg.mc_runs), dtype=np.int64).tolist()
 
 
+def _mean_ci(values: np.ndarray) -> tuple[float, float]:
+    return mean_ci95(values)
+
+
 def _mc_eval_policy(
     cfg: SimConfig,
     seeds: list[int],
@@ -96,10 +115,6 @@ def _mc_eval_policy(
     )
 
 
-def _mean_ci(values: np.ndarray) -> tuple[float, float]:
-    return mean_ci95(values)
-
-
 def _closest_by_jc(res_list: list[dict], target: float) -> dict:
     diffs = []
     for r in res_list:
@@ -110,7 +125,7 @@ def _closest_by_jc(res_list: list[dict], target: float) -> dict:
 
 
 def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
-    """Experiment A: finite-horizon trade-off curves."""
+    """Figure A: finite-horizon trade-off curves."""
     apply_ieee_style()
 
     deltas = np.logspace(np.log10(0.05), np.log10(3.0), 18).tolist()
@@ -137,9 +152,9 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
 
     def _collect(points: list[dict], key: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         xs, ys, yci = [], [], []
-        for p in points:
-            x_m, _ = _mean_ci(p["J_C"])
-            y_m, y_hw = _mean_ci(p[key])
+        for pnt in points:
+            x_m, _ = _mean_ci(pnt["J_C"])
+            y_m, y_hw = _mean_ci(pnt[key])
             xs.append(x_m)
             ys.append(y_m)
             yci.append(y_hw)
@@ -189,7 +204,7 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
 
 
 def figure_B_time_response(cfg: SimConfig, outdir: Path, delta: float) -> None:
-    """Experiment B: grow-and-reset visualization."""
+    """Figure B: grow-and-reset visualization."""
     apply_ieee_style()
 
     cfg1 = SimConfig(**cfg.__dict__)
@@ -200,16 +215,16 @@ def figure_B_time_response(cfg: SimConfig, outdir: Path, delta: float) -> None:
 
     P_trace = out["P_trace"]
     e_tilde = out["tilde_x_norm"]
-    tx = out["tx_attempt"]
-    rx = out["tx_deliv"]
+    gamma = out["gamma"]
+    delta_arr = out["delta"]
     t = np.arange(cfg1.T_steps) * cfg1.Ts
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(3.5, 2.6), sharex=True)
 
     ax1.plot(t, P_trace, label=r"$\mathrm{tr}(P_k)$")
     ax1.axhline(cfg1.delta, linestyle="--", linewidth=0.8, label=r"threshold $\delta$")
-    idx_tx = np.where(tx > 0)[0]
-    idx_rx = np.where(rx > 0)[0]
+    idx_tx = np.where(gamma > 0)[0]
+    idx_rx = np.where(delta_arr > 0)[0]
     if idx_tx.size > 0:
         ax1.vlines(t[idx_tx], ymin=0, ymax=np.max(P_trace), linewidth=0.5, alpha=0.4, label="attempt")
     if idx_rx.size > 0:
@@ -232,7 +247,7 @@ def figure_B_time_response(cfg: SimConfig, outdir: Path, delta: float) -> None:
 
 
 def figure_C_sensitivity(cfg: SimConfig, outdir: Path, lamb: float) -> None:
-    """Experiment C: sensitivity to packet success probability."""
+    """Figure C: sensitivity to packet success probability."""
     apply_ieee_style()
 
     p_vals = np.linspace(0.4, 0.95, 7)
@@ -311,7 +326,7 @@ def figure_C_sensitivity(cfg: SimConfig, outdir: Path, lamb: float) -> None:
 
 
 def figure_D_robustness(cfg: SimConfig, outdir: Path, lamb: float) -> None:
-    """Experiment D: robustness to mismatch and bursty losses."""
+    """Figure D: robustness to mismatch and bursty losses."""
     apply_ieee_style()
 
     seeds = _make_seeds(cfg)
@@ -381,8 +396,215 @@ def figure_D_robustness(cfg: SimConfig, outdir: Path, lamb: float) -> None:
     plt.close(fig)
 
 
-def run_all(outdir: str = "figs", mc_runs: int | None = None, t_steps: int | None = None, fast: bool = False) -> None:
-    outdir = Path(outdir)
+def _simulate_rollout_counterexample(
+    A: np.ndarray,
+    B: np.ndarray,
+    C: np.ndarray,
+    Qw: np.ndarray,
+    Rv: np.ndarray,
+    K: np.ndarray,
+    P0: np.ndarray,
+    horizon: int,
+    p_success: float,
+    rng: np.random.Generator,
+    policy_fn,
+) -> dict:
+    n = A.shape[0]
+    p = C.shape[0]
+    x = rng.normal(0.0, 1.0, size=(n,))
+    x_hat = x.copy()
+    u_prev = np.zeros((B.shape[1],), dtype=float)
+    P = P0.copy()
+
+    J_P = 0.0
+    J_C = 0.0
+    J_X = 0.0
+
+    for k in range(int(horizon)):
+        do_tx = bool(policy_fn(k, P))
+
+        w = rng.normal(0.0, 1.0, size=(n,))
+        v = rng.normal(0.0, 1.0, size=(p,))
+        x = A @ x + B @ u_prev + (w * np.sqrt(np.diag(Qw)))
+        y = C @ x + (v * np.sqrt(np.diag(Rv)))
+
+        x_hat_pred = A @ x_hat + B @ u_prev
+        P_pred = A @ P @ A.T + Qw
+
+        if do_tx and (float(rng.random()) < float(p_success)):
+            innovation = y - (C @ x_hat_pred)
+            S = C @ P_pred @ C.T + Rv
+            Kk = P_pred @ C.T @ np.linalg.pinv(S)
+            x_hat = x_hat_pred + (Kk @ innovation)
+            P = (np.eye(n) - Kk @ C) @ P_pred
+        else:
+            x_hat = x_hat_pred
+            P = P_pred
+
+        P = 0.5 * (P + P.T)
+
+        u = -(K @ x_hat).reshape(-1)
+        u_prev = u
+
+        J_P += float(np.trace(P))
+        J_C += float(do_tx)
+        J_X += float(norm2(x) ** 2)
+
+    return dict(J_P=J_P, J_C=J_C, J_X=J_X)
+
+
+def _eval_policy_counterexample(
+    A: np.ndarray,
+    B: np.ndarray,
+    C: np.ndarray,
+    Qw: np.ndarray,
+    Rv: np.ndarray,
+    K: np.ndarray,
+    P0: np.ndarray,
+    horizon: int,
+    p_success: float,
+    seeds: list[int],
+    policy_fn,
+) -> dict:
+    Jp, Jc, Jx = [], [], []
+    for s in seeds:
+        rng = np.random.default_rng(int(s))
+        out = _simulate_rollout_counterexample(A, B, C, Qw, Rv, K, P0, horizon, p_success, rng, policy_fn)
+        Jp.append(out["J_P"])
+        Jc.append(out["J_C"])
+        Jx.append(out["J_X"])
+    return dict(J_P=np.asarray(Jp), J_C=np.asarray(Jc), J_X=np.asarray(Jx))
+
+
+def _summarize_eval(eval_out: dict) -> dict:
+    jp, jp_ci = _mean_ci(eval_out["J_P"])
+    jc, jc_ci = _mean_ci(eval_out["J_C"])
+    jx, jx_ci = _mean_ci(eval_out["J_X"])
+    return dict(J_P=jp, J_P_ci=jp_ci, J_C=jc, J_C_ci=jc_ci, J_X=jx, J_X_ci=jx_ci)
+
+
+def figure_2_trace_not_enough(outdir: Path, fast: bool = False) -> None:
+    """Optional counterexample: trace-only DP can be suboptimal."""
+    apply_ieee_style()
+    cfg = SimConfig()
+    cfg.T_steps = int(60 if fast else 120)
+    cfg.mc_runs = int(10 if fast else 40)
+    cfg.p_success = 0.7
+    cfg.sigma_w = 0.04
+    cfg.sigma_v = 0.03
+
+    # anisotropic 2D system to expose trace insufficiency
+    A = np.array([[1.08, 0.10], [0.00, 0.90]], dtype=float)
+    B = np.array([[0.10], [0.05]], dtype=float)
+    C = np.array([[1.0, 0.25]], dtype=float)
+
+    Q = np.diag([10.0, 1.0]).astype(float)
+    R = np.array([[0.1]], dtype=float)
+    K = dlqr(A, B, Q, R)
+
+    Qw = (float(cfg.sigma_w) ** 2) * np.eye(A.shape[0], dtype=float)
+    Rv = (float(cfg.sigma_v) ** 2) * np.eye(C.shape[0], dtype=float)
+    P0 = float(cfg.P0_scale) * np.eye(A.shape[0], dtype=float)
+
+    rng_master = np.random.default_rng(int(cfg.seed) & 0xFFFFFFFF)
+    seeds = rng_master.integers(0, 2**31 - 1, size=int(cfg.mc_runs), dtype=np.int64).tolist()
+
+    # feature grid built from reachable covariances
+    samples = sample_covariances(
+        P0=P0,
+        A=A,
+        C=C,
+        Qw=Qw,
+        Rv=Rv,
+        p_success=float(cfg.p_success),
+        horizon=int(cfg.T_steps),
+        n_rollouts=260 if not fast else 100,
+        rng=rng_master,
+        tx_prob=0.5,
+    )
+    grid = build_feature_grid(samples, grid_shape=(20, 20))
+
+    lambdas = np.linspace(0.0, 1.0, 10)
+    trace_points = []
+    feat_points = []
+
+    for lamb in lambdas:
+        s_grid, actions_trace = dp_trace_policy(
+            P0=P0,
+            A=A,
+            C=C,
+            Qw=Qw,
+            Rv=Rv,
+            p_success=float(cfg.p_success),
+            lamb=float(lamb),
+            horizon=int(cfg.T_steps),
+            grid_size=120,
+        )
+        policy_trace = make_trace_policy_fn(s_grid, actions_trace)
+        trace_eval = _eval_policy_counterexample(A, B, C, Qw, Rv, K, P0, cfg.T_steps, cfg.p_success, seeds, policy_trace)
+
+        actions_feat = dp_feature_policy(
+            grid=grid,
+            A=A,
+            C=C,
+            Qw=Qw,
+            Rv=Rv,
+            p_success=float(cfg.p_success),
+            lamb=float(lamb),
+            horizon=int(cfg.T_steps),
+        )
+        policy_feat = make_feature_policy_fn(grid, actions_feat)
+        feat_eval = _eval_policy_counterexample(A, B, C, Qw, Rv, K, P0, cfg.T_steps, cfg.p_success, seeds, policy_feat)
+
+        trace_points.append(dict(lamb=float(lamb), raw=trace_eval, **_summarize_eval(trace_eval)))
+        feat_points.append(dict(lamb=float(lamb), raw=feat_eval, **_summarize_eval(feat_eval)))
+
+    def _sorted_curve(points: list[dict]) -> tuple[np.ndarray, np.ndarray]:
+        jc = np.array([pnt["J_C"] for pnt in points], dtype=float)
+        jp = np.array([pnt["J_P"] for pnt in points], dtype=float)
+        order = np.argsort(jc)
+        return jc[order], jp[order]
+
+    jc_trace, jp_trace = _sorted_curve(trace_points)
+    jc_feat, jp_feat = _sorted_curve(feat_points)
+
+    jc_min = max(jc_trace.min(), jc_feat.min())
+    jc_max = min(jc_trace.max(), jc_feat.max())
+    jc_grid = np.linspace(jc_min, jc_max, 30)
+    jp_trace_i = np.interp(jc_grid, jc_trace, jp_trace)
+    jp_feat_i = np.interp(jc_grid, jc_feat, jp_feat)
+    gap_jp = jp_trace_i - jp_feat_i
+
+    fig, axes = plt.subplots(1, 2, figsize=(6.8, 2.7))
+    ax0, ax1 = axes
+
+    ax0.plot(jc_trace, jp_trace, "o-", label="DP-trace")
+    ax0.plot(jc_feat, jp_feat, "o-", label="DP-2feature")
+    ax0.set_xlabel(r"$J_C$")
+    ax0.set_ylabel(r"$J_P$")
+    ax0.grid(True, alpha=0.3)
+    ax0.legend(frameon=False)
+
+    ax1.plot(jc_grid, gap_jp, "o-", color="tab:red")
+    ax1.axhline(0.0, color="k", linewidth=0.6, alpha=0.6)
+    ax1.set_xlabel(r"$J_C$")
+    ax1.set_ylabel(r"$J_P^{trace} - J_P^{2feat}$")
+    ax1.grid(True, alpha=0.3)
+
+    fig.suptitle("Trace is not enough: gap under matched $J_C$", y=1.02)
+    fig.tight_layout()
+    savefig(fig, outdir, "fig2_gap_curve")
+    plt.close(fig)
+
+
+def run_all(
+    outdir: str = "figs",
+    mc_runs: int | None = None,
+    t_steps: int | None = None,
+    fast: bool = False,
+    with_counterexample: bool = False,
+) -> None:
+    outdir_path = Path(outdir)
     cfg = SimConfig()
 
     if fast:
@@ -397,7 +619,34 @@ def run_all(outdir: str = "figs", mc_runs: int | None = None, t_steps: int | Non
     if mc_runs is not None or t_steps is not None:
         print(f"[fris] running with mc_runs={cfg.mc_runs}, T_steps={cfg.T_steps}")
 
-    delta_mid = figure_A_tradeoff(cfg, outdir)
-    figure_B_time_response(cfg, outdir, delta_mid)
-    figure_C_sensitivity(cfg, outdir, lamb=0.2)
-    figure_D_robustness(cfg, outdir, lamb=0.2)
+    delta_mid = figure_A_tradeoff(cfg, outdir_path)
+    figure_B_time_response(cfg, outdir_path, delta_mid)
+    figure_C_sensitivity(cfg, outdir_path, lamb=0.2)
+    figure_D_robustness(cfg, outdir_path, lamb=0.2)
+    if with_counterexample:
+        figure_2_trace_not_enough(outdir_path, fast=fast)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Generate FRIS paper figures.")
+    parser.add_argument("--outdir", default="figs", help="Output directory for figures.")
+    parser.add_argument("--mc-runs", type=int, default=None, help="Override Monte Carlo runs per sweep.")
+    parser.add_argument("--t-steps", type=int, default=None, help="Override number of simulation steps.")
+    parser.add_argument("--fast", action="store_true", help="Quick run with reduced MC runs and steps.")
+    parser.add_argument(
+        "--with-counterexample",
+        action="store_true",
+        help="Also generate trace-not-enough counterexample figures.",
+    )
+    args = parser.parse_args(argv)
+    run_all(
+        outdir=args.outdir,
+        mc_runs=args.mc_runs,
+        t_steps=args.t_steps,
+        fast=args.fast,
+        with_counterexample=args.with_counterexample,
+    )
+
+
+if __name__ == "__main__":
+    main()

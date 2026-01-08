@@ -11,9 +11,9 @@ def _ensure_src_on_path() -> None:
 
 def main() -> None:
     _ensure_src_on_path()
-    from yac_sim.__main__ import main as yac_main
+    from fris.paper_figures import main as fris_main
 
-    yac_main()
+    fris_main()
 
 
 if __name__ == "__main__":
