@@ -346,6 +346,7 @@ def figure_C_channel_impairments(cfg: SimConfig, outdir: Path, lamb: float) -> N
     obj_et_nr, obj_et_rt = [], []
     jc_dp_nr, jc_dp_rt = [], []
     jc_et_nr, jc_et_rt = [], []
+    jc_dp_delta, jc_et_delta = [], []
 
     for p_succ in p_vals:
         cfg_eval = SimConfig(**cfg.__dict__)
@@ -370,6 +371,9 @@ def figure_C_channel_impairments(cfg: SimConfig, outdir: Path, lamb: float) -> N
         et_rt = et_sweep[int(np.argmin(objs))]
         obj_et_rt.append(float((et_rt["J_P"] + float(lamb) * et_rt["J_C"]).mean()))
         jc_et_rt.append(float(et_rt["J_C"].mean()))
+
+        jc_dp_delta.append(jc_dp_rt[-1] - jc_dp_nr[-1])
+        jc_et_delta.append(jc_et_rt[-1] - jc_et_nr[-1])
 
     dp_nom = _mc_eval_policy(cfg_nom, seeds, "DP", policy_fn=policy_nom)
     jp_nom = _mean_ci(dp_nom["J_P"])[0]
@@ -428,12 +432,11 @@ def figure_C_channel_impairments(cfg: SimConfig, outdir: Path, lamb: float) -> N
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="best", frameon=True, borderpad=0.3)
 
-    ax2.plot(p_vals, jc_dp_nr, "D-", label="DP-trace no-retune")
-    ax2.plot(p_vals, jc_dp_rt, "D--", label="DP-trace retune")
-    ax2.plot(p_vals, jc_et_nr, "o-", label="ET no-retune")
-    ax2.plot(p_vals, jc_et_rt, "o--", label="ET retune")
-    ax2.set_ylabel(r"$J_C$")
-    ax2.set_title("(b) Communication usage vs $p$", loc="left")
+    ax2.plot(p_vals, jc_dp_delta, "D-", label="DP-trace retune - no-retune")
+    ax2.plot(p_vals, jc_et_delta, "o-", label="ET retune - no-retune")
+    ax2.axhline(0.0, color="k", linewidth=0.8, alpha=0.6)
+    ax2.set_ylabel(r"$\Delta J_C$")
+    ax2.set_title("(b) Retune impact on $J_C$", loc="left")
     ax2.grid(True, alpha=0.3)
     ax2.legend(loc="best", frameon=True, borderpad=0.3)
 

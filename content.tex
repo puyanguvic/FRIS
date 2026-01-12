@@ -396,7 +396,7 @@ The bottom panel further confirms that this behavior aligns with reductions in t
 Finite-horizon schedules are explicitly shaped by the channel success probability $p$ through the transition model and, for DP policies, through the value-of-information structure.
 Fig.~\ref{fig:channel_impairments} provides a consolidated view of how channel conditions affect both objective performance and robustness.
 Panels (a)--(b) quantify sensitivity to $p$ by comparing: (i) \emph{no-retune} execution, where a policy designed for a nominal $p$ is deployed under a different true channel success probability; and (ii) \emph{retune} execution, where the policy is recomputed using the true $p$.
-Retuning yields consistent improvements in $J_\lambda := J_P + \lambda J_C$ and alters communication usage, underscoring that $p$ influences not only reliability but also the optimal allocation of transmission attempts over a finite horizon.
+Retuning yields consistent improvements in $J_\lambda := J_P + \lambda J_C$ and changes communication usage, underscoring that $p$ influences not only reliability but also the optimal allocation of transmission attempts over a finite horizon.
 
 Panels (c)--(d) report robustness stress tests.
 In (c), we introduce mismatch in the assumed i.i.d.\ drop probability and report normalized degradation relative to the nominal design point, for both estimation performance ($J_P$) and the closed-loop proxy ($J_X$).
@@ -409,7 +409,7 @@ While model mismatch and burstiness inevitably degrade performance compared to t
 \includegraphics[width=0.95\textwidth]{figs/fig_C_channel_impairments.pdf}
 \caption{Channel impairments summary.
 (a) Lagrangian objective $J_\lambda = J_P + \lambda J_C$ versus packet success probability $p$.
-(b) Communication usage $J_C$ versus $p$.
+(b) Communication-usage change $\Delta J_C$ between retune and no-retune versus $p$.
 (c) Normalized degradation under mismatch in the packet success probability, reported for both estimation cost ($J_P$) and regulation proxy ($J_X$), relative to the nominal i.i.d.\ setting.
 (d) Performance under bursty packet drops (Gilbert--Elliott channel) at fixed mean success probability, as a function of burstiness (mean loss-burst length).}
 \label{fig:channel_impairments}
