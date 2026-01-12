@@ -419,7 +419,7 @@ def figure_C_channel_impairments(cfg: SimConfig, outdir: Path, lamb: float) -> N
         et_eval = _mc_eval_policy(et_eval_cfg, seeds, "ET")
         et_ratio_b.append(_mean_ci(et_eval["J_P"])[0] / jp_nom)
 
-    fig, axs = plt.subplots(2, 2, figsize=(6.8, 4.8), sharex="col")
+    fig, axs = plt.subplots(2, 2, figsize=(6.8, 4.8))
     ax1, ax2 = axs[0, 0], axs[0, 1]
     ax3, ax4 = axs[1, 0], axs[1, 1]
 
@@ -431,6 +431,7 @@ def figure_C_channel_impairments(cfg: SimConfig, outdir: Path, lamb: float) -> N
     ax1.set_title("(a) Lagrangian objective vs $p$", loc="left")
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="best", frameon=True, borderpad=0.3)
+    ax1.set_xlim(float(p_vals.min()), float(p_vals.max()))
 
     ax2.plot(p_vals, 100.0 * np.array(obj_dp_gain), "D-", label="DP-trace gain")
     ax2.plot(p_vals, 100.0 * np.array(obj_et_gain), "o-", label="ET gain")
@@ -439,6 +440,7 @@ def figure_C_channel_impairments(cfg: SimConfig, outdir: Path, lamb: float) -> N
     ax2.set_title("(b) Retune gain (percent)", loc="left")
     ax2.grid(True, alpha=0.3)
     ax2.legend(loc="best", frameon=True, borderpad=0.3)
+    ax2.set_xlim(float(p_vals.min()), float(p_vals.max()))
 
     ax3.plot(p_vals, dp_ratio_p, "D-", label="DP-trace $J_P$")
     ax3.plot(p_vals, et_ratio_p, "o-", label="ET $J_P$")
@@ -449,6 +451,7 @@ def figure_C_channel_impairments(cfg: SimConfig, outdir: Path, lamb: float) -> N
     ax3.set_title("(c) Mismatch degradation vs $p$", loc="left")
     ax3.grid(True, alpha=0.3)
     ax3.legend(loc="best", frameon=True, borderpad=0.3)
+    ax3.set_xlim(float(p_vals.min()), float(p_vals.max()))
 
     ax4.plot(bad_run, dp_ratio_b, "D-", label="DP-trace (bursty)")
     ax4.plot(bad_run, et_ratio_b, "o-", label="ET (bursty)")
