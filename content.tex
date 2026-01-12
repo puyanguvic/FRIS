@@ -270,8 +270,7 @@ This surrogate is computationally efficient and suitable for sweeping performanc
 \centering
 \includegraphics[width=0.95\columnwidth]{figs/fig_A_tradeoff_curves.pdf}
 \caption{Finite-horizon trade-offs and benchmark gaps.
-Top: estimation cost $J_P$ versus communication usage $J_C$ for \textbf{DP-trace}, \textbf{ET}, and \textbf{PER}.
-Bottom: estimation-cost gap $\Delta J_P$ relative to the \textbf{DP-trace} benchmark under matched $J_C$ (lower is better).}
+Estimation cost $J_P$ versus communication usage $J_C$ for \textbf{DP-trace}, \textbf{ET}, and \textbf{PER}, with representative vertical segments indicating the gap to \textbf{DP-trace} at matched $J_C$ (lower is better).}
 \label{fig:tradeoff}
 \end{figure}
 
@@ -332,26 +331,16 @@ Unless otherwise stated, all methods are evaluated under identical noise statist
 We first quantify the finite-horizon performance--communication trade-off and use the DP benchmark to interpret the suboptimality of heuristic schedulers.
 Fig.~\ref{fig:tradeoff} reports trade-off curves obtained by sweeping the Lagrange multiplier $\lambda$ in~\eqref{eq:mdp_problem} for \textbf{DP-trace}, and sweeping the corresponding tuning parameters for \textbf{ET} (threshold $\delta$) and \textbf{PER} (period $M$).
 
-The top panel of Fig.~\ref{fig:tradeoff} shows $J_P$ as a function of $J_C$.
+Fig.~\ref{fig:tradeoff} shows $J_P$ as a function of $J_C$.
 Across the sweep, the DP benchmark forms the lower envelope of achievable trade-offs, reflecting its explicit optimization of the finite-horizon objective over the covariance information state.
 Both heuristic baselines incur higher estimation cost at comparable communication usage, with the gap most pronounced in the intermediate regime where the scheduling choice has the largest marginal value.
 
-To make the comparison directly interpretable, the bottom panel plots the estimation-cost gap
+To make the comparison directly interpretable, the vertical segments annotate the estimation-cost gap
 \begin{equation}
 \Delta J_P := J_P^{\mathrm{heur}}-J_P^{\mathrm{DP}}
 \end{equation}
 under matched communication usage $J_C$.
 This representation separates ``how much one communicates'' from ``how effectively communication is allocated over time,'' and therefore isolates the benefit of finite-horizon, time-dependent scheduling decisions captured by the DP benchmark.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.95\columnwidth]{figs/fig_C_sensitivity_p.pdf}
-\caption{Sensitivity to packet success probability $p$.
-Top: Lagrangian objective $J_\lambda = J_P + \lambda J_C$ (fixed $\lambda$).
-Bottom: resulting communication usage $J_C$.
-Retuning the scheduler to the true $p$ improves $J_\lambda$ relative to deploying a nominal policy under mismatch.}
-\label{fig:sensitivity}
-\end{figure}
 
 \subsection{Trace Is Not Enough: A Counterexample}
 \label{sec:trace_not_enough}
@@ -384,8 +373,7 @@ Fig.~\ref{fig:gapcurve} reports the estimation-cost gap under matched communicat
 \centering
 \includegraphics[width=0.9\columnwidth]{figs/fig_B_time_response.pdf}
 \caption{Representative \textbf{DP-trace} rollout illustrating finite-horizon grow-and-reset behavior.
-Top: covariance trace $\mathrm{tr}(P_k)$ and the induced time-varying switching boundary $s_k^\star$.
-Middle: transmission attempts and successful receptions (ACKs).
+Top: covariance trace $\mathrm{tr}(P_k)$ and the induced time-varying switching boundary $s_k^\star$, with transmission attempts and ACKs overlaid as rug marks.
 Bottom: estimation error norm $\|x_k-\hat{x}_k\|_2$.}
 \label{fig:timeresp}
 \end{figure}
@@ -402,37 +390,30 @@ The bottom panel further confirms that this behavior aligns with reductions in t
 
 
 
-\subsection{Sensitivity to Packet Success Probability}
-\label{subsec:sensitivity}
+\subsection{Channel Impairments}
+\label{subsec:channel_impairments}
 
 Finite-horizon schedules are explicitly shaped by the channel success probability $p$ through the transition model and, for DP policies, through the value-of-information structure.
-To quantify the impact of channel mismatch, Fig.~\ref{fig:sensitivity} compares:
-(i) \emph{no-retune} execution, where a policy designed for a nominal $p$ is deployed under a different true channel success probability; and
-(ii) \emph{retune} execution, where the policy is recomputed using the true $p$.
+Fig.~\ref{fig:channel_impairments} provides a consolidated view of how channel conditions affect both objective performance and robustness.
+Panels (a)--(b) quantify sensitivity to $p$ by comparing: (i) \emph{no-retune} execution, where a policy designed for a nominal $p$ is deployed under a different true channel success probability; and (ii) \emph{retune} execution, where the policy is recomputed using the true $p$.
+Retuning yields consistent improvements in $J_\lambda := J_P + \lambda J_C$ and alters communication usage, underscoring that $p$ influences not only reliability but also the optimal allocation of transmission attempts over a finite horizon.
 
-The top panel reports the Lagrangian objective $J_\lambda := J_P + \lambda J_C$ for a fixed $\lambda$, while the bottom panel reports the induced communication usage $J_C$.
-Across the range of $p$, retuning yields consistent improvements relative to no-retune deployment, quantifying the value of adapting the scheduler to channel conditions.
-Moreover, the comparison indicates that mismatch can simultaneously degrade estimation performance and alter communication usage, underscoring that $p$ influences not only reliability but also the optimal allocation of transmission attempts over a finite horizon.
-
-\subsection{Robustness to Model Mismatch and Bursty Losses}
-\label{subsec:robustness}
-
-Finally, we evaluate robustness under deviations from the nominal i.i.d.\ drop model.
-Fig.~\ref{fig:robustness} reports two stress tests.
-In the top panel, we introduce mismatch in the assumed i.i.d.\ drop probability and report normalized degradation relative to the nominal design point, for both estimation performance ($J_P$) and the closed-loop proxy ($J_X$).
-In the bottom panel, we consider temporally correlated (bursty) packet drops modeled by a Gilbert--Elliott channel.
+Panels (c)--(d) report robustness stress tests.
+In (c), we introduce mismatch in the assumed i.i.d.\ drop probability and report normalized degradation relative to the nominal design point, for both estimation performance ($J_P$) and the closed-loop proxy ($J_X$).
+In (d), we consider temporally correlated (bursty) packet drops modeled by a Gilbert--Elliott channel.
 To isolate the impact of burstiness beyond the marginal success rate, we keep the mean success probability fixed and vary the temporal correlation as quantified by the mean loss-burst length.
-
 While model mismatch and burstiness inevitably degrade performance compared to the nominal i.i.d.\ design condition, the DP benchmark remains informative: it continues to provide a strong finite-horizon reference curve against which structured heuristics can be evaluated, and it reveals how far practical schedulers are from the finite-horizon oracle under realistic channel impairments.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=0.95\columnwidth]{figs/fig_D_robustness.pdf}
-\caption{Robustness to non-ideal channels.
-Top: normalized degradation under mismatch in the packet success probability, reported for both estimation cost ($J_P$) and regulation proxy ($J_X$), relative to the nominal i.i.d.\ setting.
-Bottom: performance under bursty packet drops (Gilbert--Elliott channel) at fixed mean success probability, as a function of burstiness (mean loss-burst length).}
-\label{fig:robustness}
-\end{figure}
+\includegraphics[width=0.95\textwidth]{figs/fig_C_channel_impairments.pdf}
+\caption{Channel impairments summary.
+(a) Lagrangian objective $J_\lambda = J_P + \lambda J_C$ versus packet success probability $p$.
+(b) Communication usage $J_C$ versus $p$.
+(c) Normalized degradation under mismatch in the packet success probability, reported for both estimation cost ($J_P$) and regulation proxy ($J_X$), relative to the nominal i.i.d.\ setting.
+(d) Performance under bursty packet drops (Gilbert--Elliott channel) at fixed mean success probability, as a function of burstiness (mean loss-burst length).}
+\label{fig:channel_impairments}
+\end{figure*}
 
 
 \section{Conclusion}\label{sec:concl}
