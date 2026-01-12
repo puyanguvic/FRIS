@@ -206,10 +206,12 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
 
     ax.set_xlabel(r"$J_C$")
     ax.set_ylabel(r"$J_P$")
+    ax.set_xscale("symlog", linthresh=0.5, linscale=0.8)
     ax.grid(True, alpha=0.3)
     ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.legend(loc="best", frameon=True, borderpad=0.3, ncol=2)
+    ax.margins(x=0.08, y=0.12)
 
     fig.tight_layout(pad=0.6)
     savefig(fig, outdir, "fig_A_tradeoff_curves")
