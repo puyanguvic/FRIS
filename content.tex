@@ -1,10 +1,10 @@
 \begin{abstract}
-Finite-horizon networked control tasks require explicit trade-offs between estimation quality and communication usage.
-We study transmission scheduling for discrete-time linear--Gaussian systems operating over packet-dropping channels with acknowledgements (ACKs).
-Because ACKs reveal reception outcomes, the controller can track the Kalman estimation error covariance exactly, which yields a fully observed covariance-state Markov decision process (MDP) for communication decisions.
-We derive the finite-horizon Bellman recursion and characterize the optimal time-varying scheduling policy $\gamma_k^\star(P)$ via a value-of-information inequality.
-To obtain a computable benchmark despite the continuous covariance state, we describe an offline dynamic program based on discretizing low-dimensional covariance features.
-Numerical studies illustrate finite-horizon effects and show that incorporating covariance-shape information can outperform trace-only surrogates at matched communication usage.
+Finite-horizon networked control tasks in agricultural unmanned aerial vehicles (UAVs) require explicit and time-dependent trade-offs between estimation accuracy and communication usage due to limited mission durations and unreliable wireless links.
+In such networked estimation problems, intermittent observations fundamentally alter Kalman filtering behavior and induce nontrivial scheduling effects. We propose a finite-horizon transmission scheduling framework for discrete-time linear--Gaussian systems operating over packet-dropping channels with acknowledgements (ACKs).
+By exploiting ACKs, the controller can track the Kalman estimation error covariance exactly, yielding a fully observed covariance-state Markov decision process (MDP) for communication decisions.
+Within this framework, we derive the finite-horizon Bellman recursion and characterize the optimal, generally time-varying scheduling policy via a value-of-information inequality.
+Although the covariance state is continuous and matrix-valued, we show how to compute a practical oracle benchmark through offline dynamic programming based on discretized covariance features.
+Numerical studies motivated by agricultural UAV scenarios reveal pronounced finite-horizon effects and demonstrate that incorporating covariance-shape information can significantly outperform trace-only surrogates at matched communication usage.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -13,33 +13,41 @@ networked control systems, remote estimation, transmission scheduling, Markov de
 
 \section{Introduction}\label{sec:intro}
 Wireless sensing and actuation links are fundamental components of modern cyber--physical systems.
-In many applications, sensor measurements must be delivered to a controller over shared and unreliable wireless channels.
-Periodic transmission can be wasteful under bandwidth or energy constraints, while unreliable links with packet drops make open-loop scheduling brittle.
-This motivates \emph{transmission scheduling}: deciding \emph{when} to transmit measurements so as to balance control/estimation performance against communication usage.
+In many applications, sensor measurements must be delivered to a controller over shared and unreliable wireless channels, making communication a scarce and performance-critical resource.
+Classical results have shown that packet drops fundamentally reshape Kalman filtering and estimation performance, even in linear--Gaussian systems \cite{sinopoli2004kalman,anderson2005optimal}.
+When communication is costly or unreliable, deciding \emph{when} to transmit measurements becomes a central design problem.
 
-Most existing scheduling formulations emphasize asymptotic stability or infinite-horizon average performance.
-However, many practical scenarios are mission-driven and inherently finite-horizon: a robot must traverse a corridor in $30$\,s, an inspection drone has a short battery window, or a sensor network must complete a sweep under a limited packet budget.
-In such settings, the \emph{remaining time} matters, and optimal scheduling decisions are generally time-varying.
+This challenge has motivated extensive work on remote state estimation and transmission scheduling, where communication decisions are optimized jointly with estimation objectives \cite{lipsa2011remote,soleymani2021feedback}.
+Most existing formulations, however, emphasize asymptotic stability or infinite-horizon average performance, often yielding stationary policies.
+In contrast, many practical scenarios are mission-driven and inherently finite-horizon: a robot must complete a task within a limited time window, an inspection drone operates under a fixed battery budget, or a sensor network must finish a sweep using a finite number of transmissions.
+In such settings, the \emph{remaining time} matters explicitly, and optimal scheduling decisions are generally time-varying.
 
-This paper focuses on finite-horizon scheduling for linear systems over packet-dropping channels with acknowledgements (ACKs).
-Under linear--Gaussian assumptions, ACKs allow the controller to track the Kalman estimation error covariance exactly.
-We exploit this property to formulate scheduling as a finite-horizon MDP on the covariance information state and to compute an MDP-optimal (oracle) policy.
-The objective is not to propose a low-complexity deployable scheduler, but to provide a principled finite-horizon benchmark and a clear computational recipe that can be used to design and evaluate practical heuristics.
+This paper focuses on finite-horizon transmission scheduling for linear systems over packet-dropping channels with acknowledgements (ACKs).
+Under linear--Gaussian assumptions, ACKs allow the controller to track the Kalman estimation error covariance exactly, eliminating partial observability at the controller side.
+We exploit this property to formulate scheduling as a finite-horizon MDP on the covariance information state.
+Unlike event-triggered heuristics or stationary scheduling rules, the resulting optimal policy is generally nonstationary and reflects the diminishing value of information as the horizon approaches.
 
-\paragraph*{Contributions}
-\begin{itemize}
-\item We formulate finite-horizon transmission scheduling with ACKs as a fully observed covariance-state MDP.
-\item We derive the finite-horizon Bellman recursion and an optimal, generally time-varying policy $\gamma_k^\star(P)$ characterized by a value-of-information test.
-\item We present an offline approximation procedure (feature discretization + backward induction) that yields a practical oracle benchmark for finite-horizon trade-off studies.
-\end{itemize}
+The objective of this paper is not to propose a low-complexity deployable scheduler, but rather to develop a principled finite-horizon \emph{oracle benchmark}.
+This benchmark provides a computationally explicit reference for studying performance--communication trade-offs and for evaluating structured heuristics such as event-triggered or periodic policies.
+By revealing how optimal scheduling depends on both time and covariance geometry, the proposed framework clarifies fundamental finite-horizon effects that are invisible under infinite-horizon or steady-state analyses.
+
+
 
 \section{Related Work}\label{sec:related}
-Remote estimation over unreliable channels and Kalman filtering with intermittent observations are classical topics in networked control and estimation.
-Many scheduling formulations use infinite-horizon discounted or average-cost criteria, often seeking stationary policies.
-Event-triggered and self-triggered strategies provide low-complexity alternatives by transmitting only when a trigger condition is met, with analyses typically centered on stability or steady-state performance.
+Remote estimation over unreliable communication channels is a classical topic in networked control.
+Early foundational results established that intermittent observations fundamentally alter Kalman filtering behavior and can lead to instability or unbounded error growth \cite{sinopoli2004kalman}.
+Subsequent work studied optimal filtering and estimation performance under communication constraints and packet losses, primarily in infinite-horizon settings \cite{anderson2005optimal,lipsa2011remote}.
 
-Finite-horizon scheduling has received comparatively less attention despite its relevance in mission-driven settings, and the optimal decisions are generally nonstationary because the remaining time matters.
-This paper leverages acknowledgements to obtain a fully observed covariance information state, formulates a finite-horizon covariance-state MDP, and uses the resulting dynamic program as an oracle benchmark for performance--communication trade-offs.
+More recent research has explored optimal scheduling and encoding strategies over noisy, delayed, or lossy channels, including equilibrium characterizations and encoder--decoder synthesis \cite{soleymani2021feedback,soleymani2023state}.
+Parallel to these developments, event-triggered and self-triggered strategies have emerged as low-complexity alternatives for reducing communication, with analyses typically focused on stability, steady-state performance, or asymptotic bounds \cite{kishida2018event,sun2022event,zhong2023event,deng2023event}.
+Hybrid time- and event-triggered schemes and sensor scheduling formulations have also been proposed under limited communication resources \cite{ni2023sensor,cheng2024event}.
+
+Learning-based and MDP-based approaches have recently been investigated for transmission scheduling and remote estimation, including reinforcement-learning formulations and value-of-information perspectives \cite{jia2024optimal,soleymani2024consistency,tzortzis2025remote}.
+These works typically emphasize long-run optimality, stationary policies, or stochastic equilibria, and often treat finite horizons only implicitly.
+
+In contrast, finite-horizon scheduling with explicit acknowledgement feedback has received comparatively less attention, despite its relevance in mission-driven applications.
+This paper leverages ACKs to obtain a fully observed covariance information state, formulates a finite-horizon covariance-state MDP, and uses the resulting dynamic program as an oracle benchmark for performance--communication trade-off analysis.
+Unlike infinite-horizon or steady-state treatments, the proposed framework explicitly captures time-dependent scheduling effects and highlights the role of covariance geometry beyond trace-based surrogates.
 
 
 \section{System Model and Covariance Dynamics}
@@ -50,45 +58,42 @@ We consider a discrete-time linear time-invariant (LTI) system
 x_{k+1} = A x_k + B u_k + w_k,
 \label{eq:lti}
 \end{equation}
-where $x_k\in\mathbb{R}^n$, $u_k\in\mathbb{R}^m$, and $\{w_k\}$ is zero-mean i.i.d.\ process noise with covariance $Q\succeq 0$.
-The sensor measures
+where $x_k\in\mathbb{R}^n$ denotes the system state and $u_k\in\mathbb{R}^m$ denotes the control input.
+The process noise $\{w_k\}$ is assumed to be zero-mean i.i.d.\ with covariance $Q\succeq 0$.
+The sensor measurement model is given by
 \begin{equation}
 y_k = C x_k + v_k,
 \label{eq:meas}
 \end{equation}
 where $\{v_k\}$ is zero-mean i.i.d.\ measurement noise with covariance $R\succ 0$.
-We assume $(A,B)$ is stabilizable and $(A,C)$ is detectable.
+We assume that the pair $(A,B)$ is stabilizable and $(A,C)$ is detectable.
 
 \subsection{Intermittent Communication and Control Architecture}
 
-At each time step $k$, a scheduler decides whether to attempt transmission of the current measurement.
-This decision is represented by a binary variable
+At each time step $k$, a scheduler decides whether to request transmission of the current sensor measurement.
+This decision is represented by the binary variable
 \begin{equation}
 \gamma_k \in \{0,1\},
-\label{eq:gamma}
 \end{equation}
-where $\gamma_k=1$ requests transmission and $\gamma_k=0$ corresponds to silence.
-Packet delivery is subject to random losses modeled by an i.i.d.\ Bernoulli process
+where $\gamma_k=1$ indicates that a transmission is attempted.
+Packet delivery over the communication channel is subject to i.i.d.\ Bernoulli losses,
 \begin{equation}
 \eta_k \in \{0,1\}, \qquad \Pr(\eta_k=1)=p,
-\label{eq:drop}
 \end{equation}
-independent across time and independent of $(w_k,v_k)$.
-The controller observes an acknowledgement (ACK), which reveals the effective reception indicator
+which are independent of the process and measurement noises $(w_k,v_k)$.
+The effective reception indicator is therefore
 \begin{equation}
 \delta_k := \gamma_k \eta_k.
-\label{eq:delta}
 \end{equation}
-Thus, a measurement update occurs if and only if $\delta_k=1$.
-We assume the ACK is available to the decision maker before the next scheduling decision, so the realized update outcome is known when propagating the information state.
+A measurement update occurs if and only if $\delta_k=1$.
+We assume that acknowledgements are available, so that $\delta_k$ is revealed to the controller before the next scheduling decision.
 
-The controller applies a fixed certainty-equivalent state feedback law
+The controller applies a fixed certainty-equivalent state-feedback control law
 \begin{equation}
 u_k = -K \hat{x}_k,
-\label{eq:ce_control}
 \end{equation}
-where $\hat{x}_k$ denotes the controller-side state estimate and the gain $K$ is chosen such that $A-BK$ is stable.
-Throughout the paper, the control gain is held fixed and communication decisions affect closed-loop behavior only through the quality of state estimation.
+where $\hat{x}_k$ denotes the controller-side state estimate and $K$ is chosen such that $A-BK$ is stable.
+Under this architecture, communication decisions influence closed-loop behavior solely through their impact on estimation quality.
 
 \subsection{Controller-Side Estimation and Covariance Evolution}
 
@@ -96,75 +101,67 @@ The controller maintains a Kalman filter driven by intermittently received measu
 Let
 \begin{equation}
 P_k := \mathbb{E}\!\left[(x_k-\hat{x}_k)(x_k-\hat{x}_k)^\top\right]
-\label{eq:P_def}
 \end{equation}
-denote the estimation error covariance available to the controller at decision time~$k$.
-Given $P_k$, the one-step prediction operator is
-\begin{equation}
-\mathcal{T}(P_k) := A P_k A^\top + Q,
-\label{eq:T_op}
-\end{equation}
-and the corresponding measurement-update operator is
-\begin{equation}
-\mathcal{M}(P) := P - P C^\top (C P C^\top + R)^{-1} C P.
-\label{eq:M_op}
-\end{equation}
+denote the estimation error covariance at time $k$.
+Define the prediction and update mappings
+\begin{align}
+\mathcal{T}(P) &:= A P A^\top + Q, \\
+\mathcal{M}(P) &:= P - P C^\top (CPC^\top + R)^{-1} C P .
+\end{align}
 
-Starting from $P_k$, the controller first forms the predicted covariance $\mathcal{T}(P_k)$.
-If $\delta_k=1$, a Kalman update is applied; otherwise, the estimator remains in prediction mode.
-The resulting covariance satisfies the recursion
+Starting from $P_k$, the covariance evolves according to
 \begin{equation}
 P_{k+1} =
 \begin{cases}
-\mathcal{T}(P_k), & \delta_k=0,\\[1mm]
-\mathcal{M}\!\big(\mathcal{T}(P_k)\big), & \delta_k=1.
+\mathcal{T}(P_k), & \delta_k=0,\\
+\mathcal{M}\!\big(\mathcal{T}(P_k)\big), & \delta_k=1,
 \end{cases}
 \label{eq:P_update}
 \end{equation}
-This grow-and-reset evolution captures how intermittent communication regulates the accumulation and contraction of estimation uncertainty.
+which captures the characteristic \emph{grow-and-reset} behavior induced by intermittent communication.
 
 \subsection{Covariance as an Information State}
 
 Because acknowledgements reveal $\delta_k$, the controller can track the covariance $P_k$ exactly via~\eqref{eq:P_update}.
-Under the linear--Gaussian model, the conditional distribution of future estimation errors depends on the past only through the current covariance.
-As a result, $P_k$ constitutes a sufficient information state for scheduling decisions, and transmission scheduling can be formulated as a fully observed Markov decision process on the covariance state.
+Under the linear--Gaussian assumption, the conditional distribution of future estimation errors depends on the past only through the current covariance.
+Consequently, $P_k$ constitutes a sufficient information state for transmission scheduling, and the scheduling problem can be formulated as a fully observed Markov decision process (MDP) with continuous covariance state.
 
 \section{Finite-Horizon Covariance-State MDP}
 \label{sec:mdp}
 
-We formulate transmission scheduling over a finite horizon as a Markov decision process with continuous, matrix-valued state.
+We now formulate finite-horizon transmission scheduling as an MDP defined over the covariance state.
 
 \subsection{MDP Components}
 
 \paragraph*{State}
-The state at time $k$ is the estimation error covariance $s_k := P_k \in \mathbb{S}_+^n$, where $\mathbb{S}_+^n$ denotes the cone of symmetric positive semidefinite matrices.
+$s_k := P_k \in \mathbb{S}_+^n$, the estimation error covariance.
 
 \paragraph*{Action}
-The action is the binary scheduling decision $\gamma_k\in\{0,1\}$.
+$\gamma_k\in\{0,1\}$, indicating whether a transmission is attempted.
 
 \paragraph*{Transition}
-Given $(P_k,\gamma_k)$, the next covariance $P_{k+1}$ evolves according to~\eqref{eq:P_update}.
-Equivalently, if $\gamma_k=0$, the transition is deterministic with $P_{k+1}=\mathcal{T}(P_k)$, while if $\gamma_k=1$,
+If $\gamma_k=0$, then $P_{k+1}=\mathcal{T}(P_k)$.
+If $\gamma_k=1$, then
 \begin{equation}
 P_{k+1} =
 \begin{cases}
-\mathcal{M}(\mathcal{T}(P_k)), & \text{with probability } p,\\
-\mathcal{T}(P_k), & \text{with probability } 1-p.
+\mathcal{M}(\mathcal{T}(P_k)), & \text{w.p. } p,\\
+\mathcal{T}(P_k), & \text{w.p. } 1-p .
 \end{cases}
-\label{eq:mdp_transition}
 \end{equation}
 
 \paragraph*{Stage cost}
-We use the stage cost
+We define the per-stage cost as
 \begin{equation}
 c(P_k,\gamma_k) := \mathrm{tr}(W P_k) + \lambda\,\gamma_k,
-\label{eq:stage_cost}
 \end{equation}
 where $W\succeq 0$ weights estimation uncertainty and $\lambda>0$ penalizes communication usage.
-Unless otherwise stated, we use $W=I$, yielding $c(P,\gamma)=\mathrm{tr}(P)+\lambda\gamma$.
+Unless stated otherwise, we set $W=I$.
+
 \paragraph*{Scope of the objective}
-This choice isolates the impact of communication decisions on estimation quality and allows the finite-horizon scheduling problem to be formulated as a covariance-state MDP.
-While estimation quality directly affects closed-loop behavior under certainty-equivalent control, incorporating a full finite-horizon LQG cost would require augmenting the information state and would substantially change the problem formulation, which is beyond the scope of this paper.
+This cost formulation isolates the effect of communication decisions on estimation quality and enables a tractable covariance-state MDP formulation.
+Although estimation quality directly influences closed-loop performance under certainty-equivalent control, incorporating a full finite-horizon LQG cost would require augmenting the information state and would substantially alter the problem structure.
+Such extensions are beyond the scope of this paper.
 
 \subsection{Finite-Horizon Optimization Problem}
 
@@ -173,7 +170,7 @@ A causal scheduling policy is a sequence $\pi=\{\pi_0,\ldots,\pi_{T-1}\}$ of mea
 \begin{equation}
 \gamma_k = \pi_k(P_k).
 \end{equation}
-The finite-horizon scheduling problem is
+The finite-horizon scheduling problem is given by
 \begin{equation}
 \min_{\pi}\ 
 \mathbb{E}^{\pi}\!\left[
@@ -183,15 +180,16 @@ The finite-horizon scheduling problem is
 \end{equation}
 subject to the covariance dynamics~\eqref{eq:P_update}.
 
-The weighted cost~\eqref{eq:mdp_problem} can be interpreted as the Lagrangian relaxation of a hard communication budget constraint.
-Varying $\lambda$ traces a finite-horizon performance--communication trade-off curve.
+The weighted objective~\eqref{eq:mdp_problem} can be interpreted as a Lagrangian relaxation of a hard communication budget constraint.
+Varying $\lambda$ therefore traces a finite-horizon performance--communication trade-off curve.
 
 \section{Dynamic Programming and Oracle Policy Structure}
 \label{sec:dp}
 
 \subsection{Bellman Recursion}
 
-Define the value functions
+Let $V_T(P)=0$.
+For $k=T-1,\ldots,0$, define the value function
 \begin{equation}
 V_k(P)
 :=
@@ -199,216 +197,243 @@ V_k(P)
 \mathbb{E}\!\left[
 \sum_{t=k}^{T-1} \big(\mathrm{tr}(W P_t) + \lambda\,\gamma_t\big)
 \ \big|\ P_k=P
-\right],
-\label{eq:Vk_def}
+\right].
 \end{equation}
-with terminal condition $V_T(P)=0$.
-Backward induction yields the Bellman recursion
-\begin{align}
+Standard backward induction yields the Bellman recursion
+\begin{equation}
+\begin{aligned}
 V_k(P)
-&=
+=
 \min_{\gamma\in\{0,1\}}
-\Big\{
-\mathrm{tr}(W P) + \lambda\,\gamma
- + (1-p\gamma)\,V_{k+1}\!\big(\mathcal{T}(P)\big)
- + p\gamma\,V_{k+1}\!\big(\mathcal{M}(\mathcal{T}(P))\big)
-\Big\}.
+\big\{
+&\mathrm{tr}(W P) + \lambda\,\gamma \\
+&+ (1-p\gamma)\,V_{k+1}\!\big(\mathcal{T}(P)\big) \\
+&+ p\gamma\,V_{k+1}\!\big(\mathcal{M}(\mathcal{T}(P))\big)
+\big\}.
+\end{aligned}
 \label{eq:bellman}
-\end{align}
-Because the horizon is finite, the value functions $\{V_k\}$ depend on the time index $k$, and the optimal policy is generally time-varying (nonstationary).
+\end{equation}
+Due to the finite horizon, the value functions $\{V_k\}$ are time-dependent, and the optimal policy is generally nonstationary.
 
 \subsection{Value-of-Information Scheduling Rule}
 
-For a given $V_{k+1}$, define
+For a given $V_{k+1}$, define the action-value functions
 \begin{align}
-Q_k(P,0) &:= \mathrm{tr}(W P) + V_{k+1}\!\big(\mathcal{T}(P)\big),\\
-Q_k(P,1) &:= \mathrm{tr}(W P) + \lambda
- + (1-p)\,V_{k+1}\!\big(\mathcal{T}(P)\big)
- + p\,V_{k+1}\!\big(\mathcal{M}(\mathcal{T}(P))\big).
+Q_k(P,0)
+&:= \mathrm{tr}(W P) + V_{k+1}\!\big(\mathcal{T}(P)\big), \\
+Q_k(P,1)
+&:= Q_k(P,0) + \lambda \nonumber\\
+&\quad -\, p\!\big[
+V_{k+1}\!\big(\mathcal{T}(P)\big)
+- V_{k+1}\!\big(\mathcal{M}(\mathcal{T}(P))\big)
+\big].
 \end{align}
-Then $\gamma_k^\star(P)=\arg\min_{\gamma\in\{0,1\}} Q_k(P,\gamma)$.
-The optimal action satisfies
-\begin{equation}
-\gamma_k^\star(P)=1
-\quad \Longleftrightarrow \quad
-\lambda < p\!\left(
-V_{k+1}\!\big(\mathcal{T}(P)\big)
--
-V_{k+1}\!\big(\mathcal{M}(\mathcal{T}(P))\big)
-\right).
-\label{eq:voi_test}
-\end{equation}
-Equivalently,
-\begin{equation}
-\gamma_k^\star(P)
-=
-\mathbf{1}\!\left\{
-p\!\left(
-V_{k+1}\!\big(\mathcal{T}(P)\big)
--V_{k+1}\!\big(\mathcal{M}(\mathcal{T}(P))\big)
-\right)>\lambda
-\right\}.
-\label{eq:gamma_star}
-\end{equation}
-The right-hand side represents the expected value of information from attempting a transmission: the probability of successful delivery times the reduction in cost-to-go achieved by a measurement update.
-This oracle policy provides a finite-horizon benchmark for evaluating structured event-triggered heuristics.
+
+The optimal action is given by $\gamma_k^\star(P)=\arg\min_{\gamma\in\{0,1\}} Q_k(P,\gamma)$.
+The final term represents the expected \emph{value of information} obtained by attempting a transmission: the probability of successful delivery multiplied by the resulting reduction in cost-to-go.
+This oracle policy serves as a finite-horizon benchmark for evaluating structured event-triggered scheduling heuristics.
 
 \section{Offline Computation of the Oracle Benchmark}
 \label{sec:compute}
 
 The covariance state is continuous and matrix-valued, rendering exact dynamic programming intractable except for very small systems.
-To obtain a computable oracle benchmark, we approximate the Bellman recursion on a finite set of representative covariance states.
+To obtain a computable oracle benchmark, we approximate the Bellman recursion over a finite set of representative covariance states.
 
 \subsection{Grid-Based Backward Induction}
 
-Let $\mathcal{G}=\{z^1,\ldots,z^N\}$ be a finite set of representative covariances.
+Let $\mathcal{G}=\{z^1,\ldots,z^N\}$ denote a finite set of representative covariances.
 We approximate the value functions by a table $\hat{V}_k(i)\approx V_k(z^i)$ and compute an associated policy table $\hat{\gamma}_k(i)\in\{0,1\}$.
-For each grid point $z^i$, define the two successor covariances
+For each $z^i\in\mathcal{G}$, define the successor covariances
 \begin{equation}
 z^{i,\mathrm{pred}} := \mathcal{T}(z^i),\qquad
 z^{i,\mathrm{upd}} := \mathcal{M}(\mathcal{T}(z^i)).
-\label{eq:grid_successors}
 \end{equation}
-Given a feature map $\phi(\cdot)$ (defined below), we map any covariance $P$ to a grid index by nearest-neighbor assignment in feature space,
+A covariance $P$ is mapped to the grid via nearest-neighbor assignment in feature space,
 \begin{equation}
 \mathrm{idx}(P)
 :=
 \arg\min_{j\in\{1,\ldots,N\}}
-\ \|\phi(P)-\phi(z^j)\|_2.
-\label{eq:idx_def}
+\ \|\phi(P)-\phi(z^j)\|_2 .
 \end{equation}
-Backward induction then evaluates the Bellman update on the grid:
-\begin{enumerate}
-\item Initialize $\hat{V}_T(i)=0$ for all $i\in\{1,\ldots,N\}$.
-\item For $k=T-1,\ldots,0$ and each $z^i\in\mathcal{G}$, compute
-\begin{align}
-v_0 &:= \mathrm{tr}(W z^i) + \hat{V}_{k+1}\!\big(\mathrm{idx}(z^{i,\mathrm{pred}})\big), \label{eq:v0_grid}\\
-v_1 &:= \mathrm{tr}(W z^i) + \lambda
- + (1-p)\,\hat{V}_{k+1}\!\big(\mathrm{idx}(z^{i,\mathrm{pred}})\big)
- + p\,\hat{V}_{k+1}\!\big(\mathrm{idx}(z^{i,\mathrm{upd}})\big). \label{eq:v1_grid}
-\end{align}
-\item Set $\hat{\gamma}_k(i)=1$ if $v_1<v_0$ (else $\hat{\gamma}_k(i)=0$), and set $\hat{V}_k(i)=\min\{v_0,v_1\}$.
-\end{enumerate}
-Online execution uses the exact covariance recursion~\eqref{eq:P_update} to track $P_k$, maps $P_k$ to $i=\mathrm{idx}(P_k)$, and applies $\gamma_k=\hat{\gamma}_k(i)$.
 
-\subsection{Trace-Only Surrogate (DP-trace)}\label{sec:trace_surrogate}
-The simplest discretization replaces the matrix state $P$ by the scalar
+\subsection{Trace-Only Surrogate (DP-trace)}
+\label{sec:trace_surrogate}
+
+The simplest approximation replaces the matrix-valued state $P_k$ by the scalar
 \begin{equation}
 s_k := \mathrm{tr}(P_k).
-\label{eq:trace_state}
 \end{equation}
-To obtain a closed one-dimensional recursion, we approximate $P_k$ as isotropic, $P_k \approx (s_k/n)I$, propagate one Kalman step from $(s_k/n)I$ to obtain scalars $(s^{\mathrm{pred}}_k,s^{\mathrm{upd}}_k)$, and run the finite-horizon DP on a 1D grid over $s$.
-This baseline is computationally efficient and useful for sweeping trade-off curves, but it cannot distinguish covariances with identical trace and different anisotropy.
+Assuming isotropic uncertainty, we approximate $P_k \approx (s_k/n)I$, propagate one Kalman step from $(s_k/n)I$ to obtain the scalars $(s_k^{\mathrm{pred}},s_k^{\mathrm{upd}})$, and perform finite-horizon dynamic programming on a one-dimensional grid over $s$.
+This surrogate is computationally efficient and suitable for sweeping performance-communication trade-off curves, but it cannot distinguish covariances with identical trace and different anisotropy.
 
-\subsection{Two-Feature Discretization (DP-2feature)}\label{sec:feature_disc}
-To better capture covariance \emph{shape} while keeping the dynamic program tractable, we discretize low-dimensional features of $P$ rather than the full matrix.
-We use the two-dimensional feature map
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.9\linewidth]{figs/fig_A_tradeoff_curves.pdf}
+\caption{Finite-horizon trade-offs and benchmark gaps.
+Left: estimation cost $J_P$ versus communication usage $J_C$ for \textbf{DP-trace}, \textbf{ET}, and \textbf{PER}.
+Right: estimation-cost gap $\Delta J_P$ relative to the \textbf{DP-trace} benchmark under matched $J_C$ (lower is better).}
+\label{fig:tradeoff}
+\end{figure*}
+
+\subsection{Two-Feature Discretization (DP-2feature)}
+\label{sec:feature_disc}
+
+To better capture covariance geometry while maintaining tractability, we discretize low-dimensional features of $P$ rather than the full matrix.
+We adopt the feature map
 \begin{equation}
 \phi(P)=
 \begin{bmatrix}
 \mathrm{tr}(P)\\
 \log\det(P+\varepsilon I)
 \end{bmatrix},
-\label{eq:features}
 \end{equation}
-which combines a measure of total uncertainty ($\mathrm{tr}(P)$) with a shape-sensitive term ($\log\det$).
-We construct $\mathcal{G}$ by sampling covariances reachable under random scheduling, binning samples by their feature values on a rectangular feature grid, and selecting a representative covariance (prototype) for each feature cell, filling empty cells by nearest-neighbor propagation.
-This approximation balances fidelity and tractability, enabling the offline computation of a strong finite-horizon benchmark.
+which combines a measure of total uncertainty with a shape-sensitive term.
+The grid $\mathcal{G}$ is constructed by sampling covariances reachable under random scheduling, binning samples in feature space, and selecting a representative covariance for each feature cell, with empty cells filled via nearest-neighbor propagation.
+This approximation balances fidelity and computational complexity, enabling offline computation of a strong finite-horizon oracle benchmark.
 
-\section{Numerical Studies}\label{sec:results}
-We illustrate the finite-horizon benchmark and the resulting policy structure on representative remote-estimation experiments.
-The primary metrics are the estimation objective $J_P:=\mathbb{E}[\sum_{k=0}^{T-1}\mathrm{tr}(P_k)]$ and the communication usage $J_C:=\mathbb{E}[\sum_{k=0}^{T-1}\gamma_k]$.
-To connect the estimation benchmark to regulation performance under the fixed certainty-equivalent controller~\eqref{eq:ce_control}, we additionally report a closed-loop proxy $J_X:=\mathbb{E}[\sum_{k=0}^{T-1}\|x_k\|_2^2]$ (not optimized by~\eqref{eq:mdp_problem}).
-All DP-based policies are computed offline via the discretized backward induction procedure in Section~\ref{sec:compute}.
+\section{Evaluation}
+\label{sec:results}
+
+
+
+
+This section evaluates the proposed finite-horizon covariance-state MDP benchmark and uses it as a reference to assess representative heuristic schedulers.
+We focus on the fundamental finite-horizon trade-off between estimation accuracy and communication usage induced by intermittent measurements and packet drops.
+The primary metrics are
+\begin{equation}
+J_P := \mathbb{E}\!\left[\sum_{k=0}^{T-1}\mathrm{tr}(P_k)\right],\qquad
+J_C := \mathbb{E}\!\left[\sum_{k=0}^{T-1}\gamma_k\right],
+\end{equation}
+which quantify cumulative estimation uncertainty and total transmission attempts over the horizon, respectively.
+To connect the estimation-centric benchmark to closed-loop regulation under the fixed certainty-equivalent controller~\eqref{eq:ce_control}, we additionally report the proxy metric
+\begin{equation}
+J_X := \mathbb{E}\!\left[\sum_{k=0}^{T-1}\|x_k\|_2^2\right],
+\end{equation}
+which is \emph{not} optimized by the covariance-state MDP in~\eqref{eq:mdp_problem} but provides an interpretable measure of state-regulation quality.
+All DP-based policies are computed offline via the discretized backward-induction procedure in Section~\ref{sec:compute}.
+All reported curves are obtained by Monte Carlo averaging over independent realizations of process/measurement noise and packet-drop processes.
 
 \subsection{Experimental Setup}
-Unless otherwise stated, we use a planar double-integrator plant with sampling time $T_s=0.1$\,s and full-state sensing ($C=I$).
-Process and measurement noise are Gaussian with standard deviations $(\sigma_w,\sigma_v)$, and packet delivery follows the i.i.d.\ model~\eqref{eq:drop} with success probability $p$.
-We compare three schedulers:
-(i) \textbf{DP-trace}, the trace-only finite-horizon DP from Section~\ref{sec:trace_surrogate};
-(ii) \textbf{ET}, an event-triggered threshold rule $\gamma_k=\mathbf{1}\{\mathrm{tr}(P_k)>\delta\}$; and
-(iii) \textbf{PER}, a periodic scheduler that transmits every $M$ steps.
-For the counterexample in Section~\ref{sec:trace_not_enough}, we additionally evaluate \textbf{DP-2feature} from Section~\ref{sec:feature_disc}.
-All curves are obtained by Monte Carlo averaging over independent noise and packet-drop realizations.
+
+Unless otherwise stated, we consider a planar double-integrator plant discretized with sampling time $T_s=0.1$\,s and full-state sensing ($C=I$).
+Process and measurement noises are zero-mean Gaussian with standard deviations $(\sigma_w,\sigma_v)$, and packet delivery follows the i.i.d.\ Bernoulli model~\eqref{eq:drop} with success probability $p$.
+We compare the following schedulers:
+\begin{itemize}
+\item \textbf{DP-trace}: the trace-only finite-horizon dynamic programming policy in Section~\ref{sec:trace_surrogate}, which serves as a computationally tractable oracle benchmark;
+\item \textbf{ET}: a standard event-triggered policy $\gamma_k=\mathbf{1}\{\mathrm{tr}(P_k)>\delta\}$ with threshold $\delta$ swept to obtain different trade-off points;
+\item \textbf{PER}: a periodic scheduler that transmits every $M$ steps, with period $M$ swept to vary communication usage.
+\end{itemize}
+For the counterexample in Section~\ref{sec:trace_not_enough}, we additionally evaluate \textbf{DP-2feature} from Section~\ref{sec:feature_disc}, which enriches the discretization with covariance-shape information.
+Unless otherwise stated, all methods are evaluated under identical noise statistics and identical channel parameters.
 
 \subsection{Finite-Horizon Trade-Off Curves}
-Fig.~\ref{fig:tradeoff} reports finite-horizon trade-off curves obtained by sweeping $\lambda$ in~\eqref{eq:mdp_problem}.
-The left panel shows the achievable estimation--communication trade-off for \textbf{DP-trace} (sweeping $\lambda$), \textbf{ET} (sweeping the threshold $\delta$), and \textbf{PER} (sweeping the period $M$).
-The right panel reports the estimation-cost gap $\Delta J_P := J_P^{\mathrm{heur}}-J_P^{\mathrm{DP}}$ under matched communication usage $J_C$, which makes the performance difference relative to the DP benchmark directly interpretable.
+\label{subsec:tradeoff}
+
+We first quantify the finite-horizon performance--communication trade-off and use the DP benchmark to interpret the suboptimality of heuristic schedulers.
+Fig.~\ref{fig:tradeoff} reports trade-off curves obtained by sweeping the Lagrange multiplier $\lambda$ in~\eqref{eq:mdp_problem} for \textbf{DP-trace}, and sweeping the corresponding tuning parameters for \textbf{ET} (threshold $\delta$) and \textbf{PER} (period $M$).
+
+The left panel of Fig.~\ref{fig:tradeoff} shows $J_P$ as a function of $J_C$.
+Across the sweep, the DP benchmark forms the lower envelope of achievable trade-offs, reflecting its explicit optimization of the finite-horizon objective over the covariance information state.
+Both heuristic baselines incur higher estimation cost at comparable communication usage, with the gap most pronounced in the intermediate regime where the scheduling choice has the largest marginal value.
+
+To make the comparison directly interpretable, the right panel plots the estimation-cost gap
+\begin{equation}
+\Delta J_P := J_P^{\mathrm{heur}}-J_P^{\mathrm{DP}}
+\end{equation}
+under matched communication usage $J_C$.
+This representation separates ``how much one communicates'' from ``how effectively communication is allocated over time,'' and therefore isolates the benefit of finite-horizon, time-dependent scheduling decisions captured by the DP benchmark.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\linewidth]{figs/fig_A_tradeoff_curves.pdf}
-\caption{Finite-horizon trade-offs and benchmark gaps.
-Left: estimation cost $J_P$ vs.\ communication usage $J_C$ for DP-trace, ET, and PER.
-Right: estimation-cost gap $\Delta J_P$ relative to DP-trace under matched $J_C$ (lower is better).
-}
-\label{fig:tradeoff}
+\includegraphics[width=0.9\linewidth]{figs/fig_C_sensitivity_p.pdf}
+\caption{Sensitivity to packet success probability $p$.
+Left: Lagrangian objective $J_\lambda = J_P + \lambda J_C$ (fixed $\lambda$).
+Right: resulting communication usage $J_C$.
+Retuning the scheduler to the true $p$ improves $J_\lambda$ relative to deploying a nominal policy under mismatch.}
+\label{fig:sensitivity}
 \end{figure*}
 
-\subsection{Trace Is Not Enough: A Counterexample}\label{sec:trace_not_enough}
-The trace surrogate in Section~\ref{sec:trace_surrogate} can be strictly suboptimal because $\mathrm{tr}(P)$ discards directional information.
-To illustrate this, we consider a $2$D anisotropic system with partial observation,
-$A=\begin{bmatrix}1.08&0.10\\0&0.90\end{bmatrix}$,
-$B=\begin{bmatrix}0.10\\0.05\end{bmatrix}$,
-$C=\begin{bmatrix}1&0.25\end{bmatrix}$,
-and compare \textbf{DP-trace} against \textbf{DP-2feature}, the two-feature discretization from Section~\ref{sec:feature_disc}.
-In this setting, two covariances with the same trace can lead to different future uncertainty growth depending on their anisotropy, so incorporating covariance-shape information can change the scheduling decision and improve performance at matched communication usage.
+\subsection{Trace Is Not Enough: A Counterexample}
+\label{sec:trace_not_enough}
+
+The trace-only surrogate in Section~\ref{sec:trace_surrogate} is attractive for offline computation, but it can be strictly suboptimal because $\mathrm{tr}(P)$ discards directional information. To illustrate when this loss of information matters, we consider a two-dimensional anisotropic system with partial observation
+\[
+A=\begin{bmatrix}1.08&0.10\\0&0.90\end{bmatrix},\qquad
+B=\begin{bmatrix}0.10\\0.05\end{bmatrix},\qquad
+C=\begin{bmatrix}1&0.25\end{bmatrix}.
+\]
+In this setting, two covariances with the same trace can imply different future uncertainty growth depending on anisotropy and observability directions.
+Consequently, a policy that conditions only on $\mathrm{tr}(P_k)$ may allocate transmissions differently from a policy that also accounts for covariance shape.
+
+We therefore compare \textbf{DP-trace} against \textbf{DP-2feature}, which discretizes the covariance using both trace and a shape-sensitive feature (log-det) as described in Section~\ref{sec:feature_disc}.
+Fig.~\ref{fig:gapcurve} reports the estimation-cost gap under matched communication usage, demonstrating that incorporating even low-dimensional shape information can yield a nontrivial improvement when the system dynamics and sensing direction induce anisotropic uncertainty growth.
+
 \IfFileExists{figs/fig2_gap_curve.pdf}{
-Fig.~\ref{fig:gapcurve} plots the estimation-cost gap under matched communication usage, showing that enriching the state with covariance-shape information can yield nontrivial improvements over trace-only dynamic programming.
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\linewidth]{figs/fig2_gap_curve.pdf}
-\caption{Trace is not enough: performance gap between trace-only DP and a two-feature DP (trace + logdet) under matched communication usage.}
+\caption{Trace is not enough: performance gap between \textbf{DP-trace} and \textbf{DP-2feature} (trace + log-det) under matched communication usage.}
 \label{fig:gapcurve}
 \end{figure*}
 }{}
 
 \subsection{Grow-and-Reset Dynamics Under Drops}
-Fig.~\ref{fig:timeresp} shows a representative \textbf{DP-trace} rollout.
-The policy is approximately a \emph{time-varying} trace threshold: it attempts transmission when $\mathrm{tr}(P_k)$ exceeds a time-dependent switching value $s_k^\star$ induced by the finite-horizon Bellman recursion.
-Between successful receptions (ACKs), the covariance grows according to $\mathcal{T}(\cdot)$; a successful reception triggers an update $\mathcal{M}(\cdot)$ that ``resets'' uncertainty.
-As the horizon approaches, $s_k^\star$ increases, reflecting the diminishing value of information when fewer future stages remain.
+\label{subsec:growreset}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{figs/fig_B_time_response.pdf}
-\caption{Sample DP-trace rollout.
-Top: covariance trace $\mathrm{tr}(P_k)$ and the induced time-varying DP switching threshold $s_k^\star$.
+\includegraphics[width=0.9\columnwidth]{figs/fig_B_time_response.pdf}
+\caption{Representative \textbf{DP-trace} rollout illustrating finite-horizon grow-and-reset behavior.
+Top: covariance trace $\mathrm{tr}(P_k)$ and the induced time-varying switching boundary $s_k^\star$.
 Middle: transmission attempts and successful receptions (ACKs).
 Bottom: estimation error norm $\|x_k-\hat{x}_k\|_2$.}
 \label{fig:timeresp}
 \end{figure}
 
-\subsection{Sensitivity to Packet Success Probability}
-Finite-horizon schedules designed for a nominal packet success probability $p$ can degrade when the channel quality changes.
-Fig.~\ref{fig:sensitivity} compares \emph{no-retune} execution (deploying a nominal policy under a different $p$) against \emph{retune} execution (recomputing the policy using the true $p$).
-The gap quantifies the value of adapting the scheduler to channel conditions, and highlights the role of $p$ in the value-of-information test~\eqref{eq:voi_test}.
+We next visualize the finite-horizon mechanism underlying the DP benchmark.
+Fig.~\ref{fig:timeresp} shows a representative rollout under \textbf{DP-trace}.
+The top panel plots the covariance trace $\mathrm{tr}(P_k)$ together with the induced time-varying DP switching boundary $s_k^\star$.
+The resulting scheduling behavior is well-approximated by a \emph{time-dependent} threshold policy: a transmission is attempted when $\mathrm{tr}(P_k)$ exceeds $s_k^\star$.
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\linewidth]{figs/fig_C_sensitivity_p.pdf}
-\caption{Sensitivity to packet success probability $p$.
-Left: the Lagrangian objective $J_\lambda = J_P + \lambda J_C$ under a fixed $\lambda$.
-Right: the corresponding communication usage $J_C$.
-Retuning the scheduler to the true $p$ reduces $J_\lambda$ relative to deploying a nominal policy under mismatch.
-}
-\label{fig:sensitivity}
-\end{figure*}
+Between successful receptions (ACKs), the covariance grows according to the prediction map $\mathcal{T}(\cdot)$.
+When a packet is successfully delivered, the Kalman update $\mathcal{M}(\cdot)$ sharply reduces uncertainty, yielding the characteristic grow-and-reset pattern.
+Importantly, the switching boundary increases as the horizon approaches, reflecting the diminishing value of information when fewer future stages remain.
+The bottom panel further confirms that this behavior aligns with reductions in the estimation error norm $\|x_k-\hat{x}_k\|_2$ following successful updates.
+
+
+
+\subsection{Sensitivity to Packet Success Probability}
+\label{subsec:sensitivity}
+
+Finite-horizon schedules are explicitly shaped by the channel success probability $p$ through the transition model and, for DP policies, through the value-of-information structure.
+To quantify the impact of channel mismatch, Fig.~\ref{fig:sensitivity} compares:
+(i) \emph{no-retune} execution, where a policy designed for a nominal $p$ is deployed under a different true channel success probability; and
+(ii) \emph{retune} execution, where the policy is recomputed using the true $p$.
+
+The left panel reports the Lagrangian objective $J_\lambda := J_P + \lambda J_C$ for a fixed $\lambda$, while the right panel reports the induced communication usage $J_C$.
+Across the range of $p$, retuning yields consistent improvements relative to no-retune deployment, quantifying the value of adapting the scheduler to channel conditions.
+Moreover, the comparison indicates that mismatch can simultaneously degrade estimation performance and alter communication usage, underscoring that $p$ influences not only reliability but also the optimal allocation of transmission attempts over a finite horizon.
 
 \subsection{Robustness to Model Mismatch and Bursty Losses}
-Finally, Fig.~\ref{fig:robustness} evaluates robustness under (i) mismatch in the assumed i.i.d.\ drop probability and (ii) bursty drops modeled by a Gilbert--Elliott channel.
-We report normalized performance relative to the nominal i.i.d.\ setting.
-For the bursty case, we keep the mean success probability fixed and vary the temporal correlation (mean loss-burst length), isolating the impact of burstiness beyond the marginal drop rate.
-While mismatch and burstiness can degrade performance, DP-based policies remain a useful finite-horizon reference for benchmarking heuristic schedulers.
+\label{subsec:robustness}
+
+Finally, we evaluate robustness under deviations from the nominal i.i.d.\ drop model.
+Fig.~\ref{fig:robustness} reports two stress tests.
+In the left panel, we introduce mismatch in the assumed i.i.d.\ drop probability and report normalized degradation relative to the nominal design point, for both estimation performance ($J_P$) and the closed-loop proxy ($J_X$).
+In the right panel, we consider temporally correlated (bursty) packet drops modeled by a Gilbert--Elliott channel.
+To isolate the impact of burstiness beyond the marginal success rate, we keep the mean success probability fixed and vary the temporal correlation as quantified by the mean loss-burst length.
+
+While model mismatch and burstiness inevitably degrade performance compared to the nominal i.i.d.\ design condition, the DP benchmark remains informative: it continues to provide a strong finite-horizon reference curve against which structured heuristics can be evaluated, and it reveals how far practical schedulers are from the finite-horizon oracle under realistic channel impairments.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\linewidth]{figs/fig_D_robustness.pdf}
-\caption{Robustness under channel mismatch (left) and bursty losses (right), shown as normalized performance relative to the nominal i.i.d.\ setting.
-Right panel varies burstiness (mean loss-burst length) at fixed mean success probability.}
+\includegraphics[width=0.9\linewidth]{figs/fig_D_robustness.pdf}
+\caption{Robustness to non-ideal channels.
+Left: normalized degradation under mismatch in the packet success probability, reported for both estimation cost ($J_P$) and regulation proxy ($J_X$), relative to the nominal i.i.d.\ setting.
+Right: performance under bursty packet drops (Gilbert--Elliott channel) at fixed mean success probability, as a function of burstiness (mean loss-burst length).}
 \label{fig:robustness}
 \end{figure*}
+
 
 \section{Conclusion}\label{sec:concl}
 We formulated finite-horizon transmission scheduling with acknowledgements as a covariance-state MDP and derived the corresponding finite-horizon dynamic program.
