@@ -292,12 +292,9 @@ This approximation balances fidelity and computational complexity, enabling offl
 
 \section{Evaluation}
 \label{sec:results}
-
-
-
-
+\noindent
 This section evaluates the proposed finite-horizon covariance-state MDP benchmark and uses it as a reference to assess representative heuristic schedulers.
-We focus on the fundamental finite-horizon trade-off between estimation accuracy and communication usage induced by intermittent measurements and packet drops.
+We organize the experiments around three questions: (i) what performance--communication trade-off is achievable over a finite horizon; (ii) what mechanism explains the DP benchmark's advantage; and (iii) how informative the benchmark remains under non-ideal channel conditions.
 The primary metrics are
 \begin{equation}
 J_P := \mathbb{E}\!\left[\sum_{k=0}^{T-1}\mathrm{tr}(P_k)\right],\qquad
@@ -308,63 +305,38 @@ To connect the estimation-centric benchmark to closed-loop regulation under the 
 \begin{equation}
 J_X := \mathbb{E}\!\left[\sum_{k=0}^{T-1}\|x_k\|_2^2\right],
 \end{equation}
-which is \emph{not} optimized by the covariance-state MDP in~\eqref{eq:mdp_problem} but provides an interpretable measure of state-regulation quality.
+which is \emph{not} optimized by~\eqref{eq:mdp_problem} but provides an interpretable measure of regulation quality under the fixed controller.
 All DP-based policies are computed offline via the discretized backward-induction procedure in Section~\ref{sec:compute}.
-All reported curves are obtained by Monte Carlo averaging over independent realizations of process/measurement noise and packet-drop processes.
+All reported curves are Monte Carlo averages over independent realizations of the process/measurement noise and packet-drop processes, using common random seeds across methods for fair comparisons.
 
 \subsection{Experimental Setup}
 
 Unless otherwise stated, we consider a planar double-integrator plant discretized with sampling time $T_s=0.1$\,s and full-state sensing ($C=I$).
-Process and measurement noises are zero-mean Gaussian with standard deviations $(\sigma_w,\sigma_v)$, and packet delivery follows the i.i.d.\ Bernoulli model~\eqref{eq:drop} with success probability $p$.
+The horizon is $T=120$ steps.
+Process and measurement noises are zero-mean Gaussian with standard deviations $(\sigma_w,\sigma_v)=(0.03,0.02)$, and packet delivery follows the i.i.d.\ Bernoulli model~\eqref{eq:drop} with nominal success probability $p=0.85$.
 We compare the following schedulers:
 \begin{itemize}
 \item \textbf{DP-trace}: the trace-only finite-horizon dynamic programming policy in Section~\ref{sec:trace_surrogate}, which serves as a computationally tractable oracle benchmark;
 \item \textbf{ET}: a standard event-triggered policy $\gamma_k=\mathbf{1}\{\mathrm{tr}(P_k)>\delta\}$ with threshold $\delta$ swept to obtain different trade-off points;
 \item \textbf{PER}: a periodic scheduler that transmits every $M$ steps, with period $M$ swept to vary communication usage.
 \end{itemize}
-For the counterexample in Section~\ref{sec:trace_not_enough}, we additionally evaluate \textbf{DP-2feature} from Section~\ref{sec:feature_disc}, which enriches the discretization with covariance-shape information.
-Unless otherwise stated, all methods are evaluated under identical noise statistics and identical channel parameters.
+Unless otherwise stated, all methods are evaluated under identical noise statistics and identical channel parameters, and each curve is obtained by averaging over the same number of Monte Carlo rollouts.
+For the optional counterexample in Section~\ref{sec:trace_not_enough}, we additionally evaluate \textbf{DP-2feature} from Section~\ref{sec:feature_disc}, which enriches the discretization with a shape-sensitive covariance feature.
 
 \subsection{Finite-Horizon Trade-Off Curves}
 \label{subsec:tradeoff}
 
 We first quantify the finite-horizon performance--communication trade-off and use the DP benchmark to interpret the suboptimality of heuristic schedulers.
 Fig.~\ref{fig:tradeoff} reports trade-off curves obtained by sweeping the Lagrange multiplier $\lambda$ in~\eqref{eq:mdp_problem} for \textbf{DP-trace}, and sweeping the corresponding tuning parameters for \textbf{ET} (threshold $\delta$) and \textbf{PER} (period $M$).
+Across the sweep, \textbf{DP-trace} forms the lower envelope of achievable trade-offs, reflecting explicit finite-horizon optimization over the covariance information state.
+Both heuristics incur higher estimation cost at comparable communication usage, with the gap most pronounced in the intermediate regime where scheduling choices have the largest marginal value.
 
-Fig.~\ref{fig:tradeoff} shows $J_P$ as a function of $J_C$.
-Across the sweep, the DP benchmark forms the lower envelope of achievable trade-offs, reflecting its explicit optimization of the finite-horizon objective over the covariance information state.
-Both heuristic baselines incur higher estimation cost at comparable communication usage, with the gap most pronounced in the intermediate regime where the scheduling choice has the largest marginal value.
-
-To make the comparison directly interpretable, the vertical segments annotate the estimation-cost gap
+To make the comparison directly interpretable without an extra subplot, the vertical segments in Fig.~\ref{fig:tradeoff} annotate the estimation-cost gap
 \begin{equation}
 \Delta J_P := J_P^{\mathrm{heur}}-J_P^{\mathrm{DP}}
 \end{equation}
 under matched communication usage $J_C$.
-This representation separates ``how much one communicates'' from ``how effectively communication is allocated over time,'' and therefore isolates the benefit of finite-horizon, time-dependent scheduling decisions captured by the DP benchmark.
-
-\subsection{Trace Is Not Enough: A Counterexample}
-\label{sec:trace_not_enough}
-
-The trace-only surrogate in Section~\ref{sec:trace_surrogate} is attractive for offline computation, but it can be strictly suboptimal because $\mathrm{tr}(P)$ discards directional information. To illustrate when this loss of information matters, we consider a two-dimensional anisotropic system with partial observation
-\[
-A=\begin{bmatrix}1.08&0.10\\0&0.90\end{bmatrix},\qquad
-B=\begin{bmatrix}0.10\\0.05\end{bmatrix},\qquad
-C=\begin{bmatrix}1&0.25\end{bmatrix}.
-\]
-In this setting, two covariances with the same trace can imply different future uncertainty growth depending on anisotropy and observability directions.
-Consequently, a policy that conditions only on $\mathrm{tr}(P_k)$ may allocate transmissions differently from a policy that also accounts for covariance shape.
-
-We therefore compare \textbf{DP-trace} against \textbf{DP-2feature}, which discretizes the covariance using both trace and a shape-sensitive feature (log-det) as described in Section~\ref{sec:feature_disc}.
-Fig.~\ref{fig:gapcurve} reports the estimation-cost gap under matched communication usage, demonstrating that incorporating even low-dimensional shape information can yield a nontrivial improvement when the system dynamics and sensing direction induce anisotropic uncertainty growth.
-
-\IfFileExists{figs/fig2_gap_curve.pdf}{
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.95\columnwidth]{figs/fig2_gap_curve.pdf}
-\caption{Trace is not enough: performance gap between \textbf{DP-trace} and \textbf{DP-2feature} (trace + log-det) under matched communication usage.}
-\label{fig:gapcurve}
-\end{figure}
-}{}
+This isolates allocation efficiency (when to transmit) from communication volume (how much to transmit), and highlights the finite-horizon, time-dependent structure captured by the DP benchmark.
 
 \subsection{Grow-and-Reset Dynamics Under Drops}
 \label{subsec:growreset}
@@ -380,29 +352,27 @@ Bottom: estimation error norm $\|x_k-\hat{x}_k\|_2$.}
 
 We next visualize the finite-horizon mechanism underlying the DP benchmark.
 Fig.~\ref{fig:timeresp} shows a representative rollout under \textbf{DP-trace}.
-The top panel plots the covariance trace $\mathrm{tr}(P_k)$ together with the induced time-varying DP switching boundary $s_k^\star$.
-The resulting scheduling behavior is well-approximated by a \emph{time-dependent} threshold policy: a transmission is attempted when $\mathrm{tr}(P_k)$ exceeds $s_k^\star$.
+The top panel plots the covariance trace $\mathrm{tr}(P_k)$ together with the induced time-varying DP switching boundary $s_k^\star$, and overlays transmission attempts and ACKs as rug marks.
+The scheduling behavior is well-approximated by a \emph{time-dependent} threshold rule: a transmission is attempted when $\mathrm{tr}(P_k)$ exceeds $s_k^\star$.
 
-Between successful receptions (ACKs), the covariance grows according to the prediction map $\mathcal{T}(\cdot)$.
-When a packet is successfully delivered, the Kalman update $\mathcal{M}(\cdot)$ sharply reduces uncertainty, yielding the characteristic grow-and-reset pattern.
-Importantly, the switching boundary increases as the horizon approaches, reflecting the diminishing value of information when fewer future stages remain.
-The bottom panel further confirms that this behavior aligns with reductions in the estimation error norm $\|x_k-\hat{x}_k\|_2$ following successful updates.
+Between successful receptions, the covariance grows according to the prediction map $\mathcal{T}(\cdot)$; a successful delivery triggers the Kalman update $\mathcal{M}(\cdot)$ and sharply reduces uncertainty, producing the characteristic grow-and-reset pattern.
+The boundary $s_k^\star$ increases as the horizon approaches, reflecting the diminishing value of information with fewer remaining stages.
+The bottom panel shows that ACK events coincide with drops in the estimation error norm $\|x_k-\hat{x}_k\|_2$.
 
 
 
 \subsection{Channel Impairments}
 \label{subsec:channel_impairments}
 
-Finite-horizon schedules are explicitly shaped by the channel success probability $p$ through the transition model and, for DP policies, through the value-of-information structure.
-Fig.~\ref{fig:channel_impairments} provides a consolidated view of how channel conditions affect both objective performance and robustness.
-Panels (a)--(b) quantify sensitivity to $p$ by comparing: (i) \emph{no-retune} execution, where a policy designed for a nominal $p$ is deployed under a different true channel success probability; and (ii) \emph{retune} execution, where the policy is recomputed using the true $p$.
-Retuning yields consistent improvements in $J_\lambda := J_P + \lambda J_C$, underscoring that $p$ influences not only reliability but also the optimal allocation of transmission attempts over a finite horizon.
+Finite-horizon schedules depend on the channel success probability $p$ through the transition model and, for DP policies, through the value-of-information term.
+Fig.~\ref{fig:channel_impairments} summarizes how channel conditions affect sensitivity and robustness.
+Panels (a)--(b) sweep the true $p$ and compare deploying a nominally designed policy (\emph{no-retune}) versus recomputing the scheduler for the true $p$ (\emph{retune}).
+Retuning consistently improves the Lagrangian objective $J_\lambda := J_P + \lambda J_C$, and panel (b) quantifies the improvement as a percentage gain.
 
-Panels (c)--(d) report robustness stress tests.
-In (c), we introduce mismatch in the assumed i.i.d.\ drop probability and report normalized degradation relative to the nominal design point, for both estimation performance ($J_P$) and the closed-loop proxy ($J_X$).
-In (d), we consider temporally correlated (bursty) packet drops modeled by a Gilbert--Elliott channel.
-To isolate the impact of burstiness beyond the marginal success rate, we keep the mean success probability fixed and vary the temporal correlation as quantified by the mean loss-burst length.
-While model mismatch and burstiness inevitably degrade performance compared to the nominal i.i.d.\ design condition, the DP benchmark remains informative: it continues to provide a strong finite-horizon reference curve against which structured heuristics can be evaluated, and it reveals how far practical schedulers are from the finite-horizon oracle under realistic channel impairments.
+Panels (c)--(d) stress-test robustness beyond the nominal i.i.d.\ drop model.
+Panel (c) reports normalized degradation under probability mismatch, for both estimation cost ($J_P$) and the closed-loop proxy ($J_X$), relative to the nominal design point.
+Panel (d) evaluates temporally correlated (bursty) losses modeled by a Gilbert--Elliott channel at fixed mean success probability, with burstiness controlled by the mean loss-burst length.
+Although mismatch and burstiness degrade performance, the DP benchmark remains informative as a strong finite-horizon reference against which structured heuristics can be evaluated.
 
 \begin{figure*}[t]
 \centering
@@ -414,6 +384,31 @@ While model mismatch and burstiness inevitably degrade performance compared to t
 (d) Performance under bursty packet drops (Gilbert--Elliott channel) at fixed mean success probability, as a function of burstiness (mean loss-burst length).}
 \label{fig:channel_impairments}
 \end{figure*}
+
+\subsection{Trace Is Not Enough: A Counterexample}
+\label{sec:trace_not_enough}
+
+The trace-only surrogate in Section~\ref{sec:trace_surrogate} is attractive for offline computation, but it can be strictly suboptimal because $\mathrm{tr}(P)$ discards directional information.
+To illustrate when this loss of information matters, we consider a two-dimensional anisotropic system with partial observation
+\[
+A=\begin{bmatrix}1.08&0.10\\0&0.90\end{bmatrix},\qquad
+B=\begin{bmatrix}0.10\\0.05\end{bmatrix},\qquad
+C=\begin{bmatrix}1&0.25\end{bmatrix}.
+\]
+In this setting, covariances with the same trace can imply different future uncertainty growth due to anisotropy and sensing directions.
+Consequently, a policy that conditions only on $\mathrm{tr}(P_k)$ may allocate transmissions differently from a policy that also accounts for covariance shape.
+
+We compare \textbf{DP-trace} against \textbf{DP-2feature} from Section~\ref{sec:feature_disc}, which discretizes the covariance using both trace and a shape-sensitive feature (log-det).
+\IfFileExists{figs/fig2_gap_curve.pdf}{
+Fig.~\ref{fig:gapcurve} reports the estimation-cost gap under matched communication usage, demonstrating that incorporating even low-dimensional shape information can yield a nontrivial improvement in anisotropic settings.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\columnwidth]{figs/fig2_gap_curve.pdf}
+\caption{Trace is not enough: performance gap between \textbf{DP-trace} and \textbf{DP-2feature} (trace + log-det) under matched communication usage.}
+\label{fig:gapcurve}
+\end{figure}
+}{}
 
 
 \section{Conclusion}\label{sec:concl}
