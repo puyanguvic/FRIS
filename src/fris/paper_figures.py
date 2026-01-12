@@ -169,12 +169,12 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
     if x_per.size > 1:
         gap_per = np.interp(x_dp, x_per, y_per, left=np.nan, right=np.nan) - y_dp
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.4))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(3.4, 4.6), sharex=True)
 
     ax1.plot(x_dp, y_dp, "D-", label="DP-trace")
     ax1.plot(x_et, y_et, "o-", label="ET")
     ax1.plot(x_per, y_per, "s--", label="PER")
-    ax1.set_xlabel(r"$J_C$")
+    ax1.set_xlabel("")
     ax1.set_ylabel(r"$J_P$")
     ax1.grid(True, alpha=0.3)
     ax1.xaxis.set_major_locator(MaxNLocator(nbins=5))
@@ -191,7 +191,7 @@ def figure_A_tradeoff(cfg: SimConfig, outdir: Path) -> float:
     ax2.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax2.legend(loc="best", frameon=True, borderpad=0.3)
 
-    fig.tight_layout(pad=0.6)
+    fig.tight_layout(pad=0.6, h_pad=0.5)
     savefig(fig, outdir, "fig_A_tradeoff_curves")
     plt.close(fig)
 
@@ -349,13 +349,13 @@ def figure_C_sensitivity(cfg: SimConfig, outdir: Path, lamb: float) -> None:
         obj_et_rt.append(float((et_rt["J_P"] + float(lamb) * et_rt["J_C"]).mean()))
         jc_et_rt.append(float(et_rt["J_C"].mean()))
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.4))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(3.4, 4.6), sharex=True)
 
     ax1.plot(p_vals, obj_dp_nr, "D-", label="DP-trace no-retune")
     ax1.plot(p_vals, obj_dp_rt, "D--", label="DP-trace retune")
     ax1.plot(p_vals, obj_et_nr, "o-", label="ET no-retune")
     ax1.plot(p_vals, obj_et_rt, "o--", label="ET retune")
-    ax1.set_xlabel(r"$p$")
+    ax1.set_xlabel("")
     ax1.set_ylabel(r"$J_{\lambda}=J_P+\lambda J_C$")
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="best", frameon=True, borderpad=0.3)
@@ -369,7 +369,7 @@ def figure_C_sensitivity(cfg: SimConfig, outdir: Path, lamb: float) -> None:
     ax2.grid(True, alpha=0.3)
     ax2.legend(loc="best", frameon=True, borderpad=0.3)
 
-    fig.tight_layout(pad=0.6)
+    fig.tight_layout(pad=0.6, h_pad=0.5)
     savefig(fig, outdir, "fig_C_sensitivity_p")
     plt.close(fig)
 
@@ -433,7 +433,7 @@ def figure_D_robustness(cfg: SimConfig, outdir: Path, lamb: float) -> None:
         et_eval = _mc_eval_policy(et_eval_cfg, seeds, "ET")
         et_ratio_b.append(_mean_ci(et_eval["J_P"])[0] / jp_nom)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.4))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(3.4, 4.8))
 
     ax1.plot(p_vals, dp_ratio_p, "D-", label="DP-trace $J_P$")
     ax1.plot(p_vals, et_ratio_p, "o-", label="ET $J_P$")
@@ -451,7 +451,7 @@ def figure_D_robustness(cfg: SimConfig, outdir: Path, lamb: float) -> None:
     ax2.grid(True, alpha=0.3)
     ax2.legend(loc="best", frameon=True, borderpad=0.3)
 
-    fig.tight_layout(pad=0.6)
+    fig.tight_layout(pad=0.6, h_pad=0.6)
     savefig(fig, outdir, "fig_D_robustness")
     plt.close(fig)
 
@@ -635,8 +635,7 @@ def figure_2_trace_not_enough(outdir: Path, fast: bool = False) -> None:
     jp_feat_i = np.interp(jc_grid, jc_feat, jp_feat)
     gap_jp = jp_trace_i - jp_feat_i
 
-    fig, axes = plt.subplots(1, 2, figsize=(6.8, 2.7))
-    ax0, ax1 = axes
+    fig, (ax0, ax1) = plt.subplots(2, 1, figsize=(3.4, 4.8))
 
     ax0.plot(jc_trace, jp_trace, "o-", label="DP-trace")
     ax0.plot(jc_feat, jp_feat, "o-", label="DP-2feature")
@@ -651,8 +650,7 @@ def figure_2_trace_not_enough(outdir: Path, fast: bool = False) -> None:
     ax1.set_ylabel(r"$J_P^{trace} - J_P^{2feat}$")
     ax1.grid(True, alpha=0.3)
 
-    fig.suptitle("Trace is not enough: gap under matched $J_C$", y=1.02)
-    fig.tight_layout()
+    fig.tight_layout(pad=0.6, h_pad=0.6)
     savefig(fig, outdir, "fig2_gap_curve")
     plt.close(fig)
 
